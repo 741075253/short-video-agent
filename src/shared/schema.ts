@@ -64,7 +64,7 @@ export const GenerateStoryInputSchema = z.object({
 })
 export type GenerateStoryInput = z.infer<typeof GenerateStoryInputSchema>
 
-export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg'])
+export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg', 'comfyui', 'dalle'])
 export type VideoProviderName = z.infer<typeof VideoProviderNameSchema>
 
 export const VideoGenerateInputSchema = z.object({

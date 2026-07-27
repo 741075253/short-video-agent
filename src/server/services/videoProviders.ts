@@ -227,11 +227,111 @@ class LocalFfmpegProvider implements VideoProvider {
   }
 }
 
+class DalleProvider implements VideoProvider {
+  name: VideoProviderName = 'dalle'
+
+  constructor(
+    private readonly outputDir: string,
+    private readonly apiKey: string,
+    private readonly ffmpegProvider: LocalFfmpegProvider
+  ) {}
+
+  async generate(input: VideoGenerateInput): Promise<VideoGenerateResult> {
+    await mkdir(this.outputDir, { recursive: true })
+
+    const shots = targetShots(input)
+    const results: Shot[] = []
+    const errors: { shotId: string; message: string }[] = []
+
+    for (const shot of shots) {
+      try {
+        const imagePath = await this.generateImage(shot)
+        results.push({
+          ...shot,
+          status: 'ready' as const,
+          assetPath: imagePath,
+          errorMessage: undefined
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '图片生成失败'
+        results.push({
+          ...shot,
+          status: 'failed' as const,
+          errorMessage: message
+        })
+        errors.push({ shotId: shot.id, message })
+      }
+    }
+
+    const syntheticProject = {
+      ...input.project,
+      storyPackage: input.project.storyPackage && {
+        ...input.project.storyPackage,
+        shots: results
+      }
+    }
+    const videoResult = await this.ffmpegProvider.generate({
+      ...input,
+      project: syntheticProject,
+      provider: 'local_ffmpeg'
+    })
+
+    return {
+      ...videoResult,
+      provider: 'dalle',
+      updatedShots: results
+    }
+  }
+
+  private async generateImage(shot: Shot): Promise<string> {
+    const prompt = `animation drama scene: ${shot.prompt || shot.visual}, 9:16 vertical composition for short video, cinematic lighting, vibrant colors`
+
+    const response = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': `Bearer ${this.apiKey}`
+      },
+      body: JSON.stringify({
+        model: 'dall-e-3',
+        prompt,
+        n: 1,
+        size: '1024x1792',
+        quality: 'standard'
+      })
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`DALL·E 返回 ${response.status}: ${text.slice(0, 300)}`)
+    }
+
+    const { data } = await response.json() as { data: Array<{ url: string }> }
+    if (!data?.[0]?.url) throw new Error('DALL·E 未返回图片')
+
+    const destPath = join(this.outputDir, `${shot.id}-dalle.png`)
+    await this.download(data[0].url, destPath)
+    return destPath
+  }
+
+  private async download(url: string, destPath: string): Promise<void> {
+    const resp = await fetch(url)
+    if (!resp.ok) throw new Error(`下载图片失败: ${resp.status}`)
+    const { writeFile } = await import('node:fs/promises')
+    await writeFile(destPath, Buffer.from(await resp.arrayBuffer()))
+  }
+}
+
 export function createVideoProvider(
   name: VideoProviderName,
   outputDir: string,
-  ffmpegPath = 'ffmpeg'
+  ffmpegPath?: string,
+  apiKey?: string
 ): VideoProvider {
   if (name === 'mock') return new MockProvider(outputDir)
-  return new LocalFfmpegProvider(outputDir, ffmpegPath)
+  if (name === 'dalle' && apiKey) {
+    return new DalleProvider(outputDir, apiKey, new LocalFfmpegProvider(outputDir, ffmpegPath || 'ffmpeg'))
+  }
+  if (name === 'dalle') return new MockProvider(outputDir)
+  return new LocalFfmpegProvider(outputDir, ffmpegPath || 'ffmpeg')
 }

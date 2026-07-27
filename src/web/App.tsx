@@ -43,7 +43,7 @@ export function App() {
     setMessage('已保存')
   }
 
-  async function generateVideo(provider: 'mock' | 'local_ffmpeg') {
+  async function generateVideo(provider: 'mock' | 'local_ffmpeg' | 'dalle') {
     if (!current) return
     setMessage(`正在使用 ${provider} 生成视频...`)
     const result = await api.generateVideo(current.id, provider)
@@ -86,6 +86,7 @@ export function App() {
             <button onClick={() => saveProject().catch((error: Error) => setMessage(error.message))}>保存修改</button>
             <button onClick={() => generateVideo('mock').catch((error: Error) => setMessage(error.message))}>Mock 生成视频</button>
             <button onClick={() => generateVideo('local_ffmpeg').catch((error: Error) => setMessage(error.message))}>FFmpeg 生成视频</button>
+            <button onClick={() => generateVideo('dalle').catch((error: Error) => setMessage(error.message))}>DALL·E 生成视频</button>
             <a href={api.exportUrl(current.id, 'json')} target="_blank" rel="noreferrer">导出 JSON</a>
             <a href={api.exportUrl(current.id, 'markdown')} target="_blank" rel="noreferrer">导出 Markdown</a>
           </div>

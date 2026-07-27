@@ -95,7 +95,8 @@ export function createRoutes(dataDir: string) {
       if (!project) return res.status(404).json({ message: '项目不存在' })
       const providerName = VideoProviderNameSchema.parse(req.body.provider ?? 'mock')
       const ffmpegPath = process.env.FFMPEG_PATH
-      const provider = createVideoProvider(providerName, join(dataDir, 'outputs', project.id), ffmpegPath)
+      const apiKey = process.env.OPENAI_API_KEY
+      const provider = createVideoProvider(providerName, join(dataDir, 'outputs', project.id), ffmpegPath, apiKey)
       const result = await provider.generate({ project, provider: providerName, shotId: req.body.shotId })
       if (project.storyPackage) {
         const updatedById = new Map(result.updatedShots.map((shot) => [shot.id, shot]))

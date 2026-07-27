@@ -22,7 +22,7 @@ export const api = {
   saveProject: (project: Project) =>
     requestJson<Project>(`/projects/${project.id}`, { method: 'PUT', body: JSON.stringify(project) }),
   generateStory: (id: string) => requestJson<Project>(`/projects/${id}/generate-story`, { method: 'POST' }),
-  generateVideo: (id: string, provider: 'mock' | 'local_ffmpeg') =>
+  generateVideo: (id: string, provider: 'mock' | 'local_ffmpeg' | 'dalle') =>
     requestJson<VideoGenerateResult>(`/projects/${id}/generate-video`, {
       method: 'POST',
       body: JSON.stringify({ provider })
