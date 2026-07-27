@@ -39,6 +39,13 @@ pnpm web
 
 ## FFmpeg
 
+如果 FFmpeg 未加入系统 PATH，可以指定便携版路径：
+
+```bash
+$env:FFMPEG_PATH="E:\\workspace\\tools\\ffmpeg-8.1.2-full_build\\bin\\ffmpeg.exe"
+pnpm dev
+```
+
 如果本机没有安装 FFmpeg，`LocalFfmpegProvider` 会把镜头标记为失败并提示：
 
 ```text
