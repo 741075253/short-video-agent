@@ -97,17 +97,25 @@ class LocalFfmpegProvider implements VideoProvider {
 
   private async renderVideo(shots: Shot[], outputPath: string): Promise<void> {
     const fontFile = this.resolveFont()
+    const w = 1080
+    const h = 1920
+
+    // 每个镜头生成彩色渐变背景
+    const palette = ['#1a1a2e', '#16213e', '#0f3460', '#533483', '#e94560', '#1a1a2e']
+    const frames: string[] = []
+    for (const shot of shots) {
+      const color = palette[shot.index % palette.length]
+      const bgPath = await this.createGradientFrame(shot, color, w, h)
+      // 每帧重复引用两次以克服 concat 问题
+      frames.push(`file '${bgPath.replace(/'/g, "'\\''")}'`)
+      frames.push(`duration ${shot.durationSeconds}`)
+    }
+    const lastColor = palette[shots.length % palette.length]
+    const lastPath = await this.createGradientFrame(shots[shots.length - 1], lastColor, w, h)
+    frames.push(`file '${lastPath.replace(/'/g, "'\\''")}'`)
 
     const concatList = join(this.outputDir, 'concat.txt')
-    const lines: string[] = []
-    for (const shot of shots) {
-      const bgPath = await this.createColorFrame(shot, '#1a1a2e')
-      lines.push(`file '${bgPath.replace(/'/g, "'\\''")}'`)
-      lines.push(`duration ${shot.durationSeconds}`)
-    }
-    const lastBg = await this.createColorFrame(shots[shots.length - 1], '#1a1a2e')
-    lines.push(`file '${lastBg.replace(/'/g, "'\\''")}'`)
-    await writeFile(concatList, lines.join('\n'), 'utf8')
+    await writeFile(concatList, frames.join('\n'), 'utf8')
 
     const args: string[] = [
       '-f', 'concat',
@@ -116,36 +124,53 @@ class LocalFfmpegProvider implements VideoProvider {
       '-pix_fmt', 'yuv420p',
       '-c:v', 'libx264',
       '-preset', 'fast',
-      '-crf', '22',
+      '-crf', '27',
       '-r', '24',
       '-y',
       outputPath
     ]
 
+    // 叠加场景文字和字幕
     if (fontFile) {
-      // 内嵌字幕
-      const subtitleLines: string[] = []
+      const overlays: string[] = []
       let offset = 0
       for (const shot of shots) {
-        const seconds = shot.durationSeconds
-        const text = (shot.subtitle || '')
-          .replace(/\\/g, '\\\\')
-          .replace(/'/g, "'\\''")
-          .replace(/:/g, '\\:')
-          .replace(/{/g, '\\{').replace(/}/g, '\\}')
-        if (text.trim()) {
-          subtitleLines.push(
-            `drawtext=fontfile='${fontFile.replace(/\\/g, '/').replace(/'/g, "'\\''").replace(/:/g, '\\:')}':text='${text}':fontcolor=white:fontsize=32:x=(w-text_w)/2:y=h-120:box=1:boxcolor=black@0.5:boxborderw=8:enable='between(t,${offset},${offset + seconds})'`
+        const t0 = offset
+        const t1 = offset + shot.durationSeconds * 0.4  // 淡入
+        const tEnd = offset + shot.durationSeconds
+        offset = tEnd
+
+        const safeFont = fontFile.replace(/\\/g, '/').replace(/'/g, "'\\''").replace(/:/g, '\\:')
+        const sceneText = this.escapeDrawtext(shot.visual.slice(0, 40) || '……')
+        const subtitleText = this.escapeDrawtext(shot.subtitle || '')
+
+        // 画面描述 — 中上区域
+        overlays.push(
+          `drawtext=fontfile='${safeFont}':text='${sceneText}':fontcolor=white@0.9:fontsize=36:x=(w-text_w)/2:y=h*0.28-text_h/2:box=1:boxcolor=black@0.35:boxborderw=8:enable='between(t,${t0},${tEnd})':alpha='if(lt(t,${t1}), (t-${t0})/${t1 - t0}, 1)'`
+        )
+        if (subtitleText.trim()) {
+          // 字幕 — 底部
+          overlays.push(
+            `drawtext=fontfile='${safeFont}':text='${subtitleText}':fontcolor=white:fontsize=28:x=(w-text_w)/2:y=h*0.78:box=1:boxcolor=black@0.5:boxborderw=8:enable='between(t,${t0},${tEnd})'`
           )
         }
-        offset += seconds
       }
-      if (subtitleLines.length > 0) {
-        args.splice(6, 0, '-vf', subtitleLines.join(','))
+      if (overlays.length > 0) {
+        args.splice(6, 0, '-vf', overlays.join(','))
       }
     }
 
     await this.spawnFfmpeg(args)
+  }
+
+  private escapeDrawtext(text: string): string {
+    return text
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "'\\''")
+      .replace(/:/g, '\\:')
+      .replace(/{/g, '\\{').replace(/}/g, '\\}')
+      .replace(/\n/g, ' ')
+      .replace(/%/g, '\\\\\\%')
   }
 
   private resolveFont(): string | null {
@@ -164,11 +189,12 @@ class LocalFfmpegProvider implements VideoProvider {
     return null
   }
 
-  private async createColorFrame(shot: Shot, color: string): Promise<string> {
+  private async createGradientFrame(shot: Shot, color: string, w: number, h: number): Promise<string> {
+    // 生成单帧彩色背景
     const path = join(this.outputDir, `${shot.id}-bg.png`)
     await this.spawnFfmpeg([
       '-f', 'lavfi',
-      '-i', `color=${color}:size=1080x1920:d=${shot.durationSeconds}`,
+      '-i', `color=${color}:size=${w}x${h}`,
       '-vframes', '1',
       '-y',
       path
