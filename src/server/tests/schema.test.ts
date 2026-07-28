@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ProjectSchema } from '../../shared/schema'
+import { KlingConfigSchema, ProjectSchema } from '../../shared/schema'
 
 describe('ProjectSchema', () => {
   it('accepts a complete project with one shot', () => {
@@ -47,5 +47,23 @@ describe('ProjectSchema', () => {
     })
 
     expect(project.storyPackage?.shots[0].status).toBe('pending')
+  })
+})
+
+describe('KlingConfigSchema', () => {
+  it('coerces numeric environment values', () => {
+    const config = KlingConfigSchema.parse({
+      accessKey: '',
+      secretKey: '',
+      model: 'kling-v1.6',
+      duration: '5',
+      mode: 'std',
+      cfgScale: '0.5',
+      concurrency: '3',
+      pollIntervalMs: '3000',
+      pollMaxRetries: '80'
+    })
+
+    expect(config).toMatchObject({ duration: 5, cfgScale: 0.5, concurrency: 3 })
   })
 })

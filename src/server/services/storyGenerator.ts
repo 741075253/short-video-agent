@@ -1,21 +1,52 @@
 import type { GenerateStoryInput, StoryPackage } from '../../shared/schema'
 
 function splitSentences(text: string): string[] {
-  return text
-    .split(/[。！？!?\n]/)
+  const normalized = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/([一-龥，、；：])\s*\n+\s*(?=[一-龥])/g, '$1')
+
+  return normalized
+    .split(/[。！？!?\n]+/)
     .map((item) => item.trim())
     .filter(Boolean)
 }
 
+const actionMarkers = [
+  '推开', '握紧', '低声', '看见', '听见', '走进', '走出', '跑向', '转身', '抬头', '站在', '坐在',
+  '说', '问', '答', '喊', '笑', '哭', '走', '跑', '看', '望', '拿', '举', '冲', '躲', '停'
+]
+
+function characterNameFromPhrase(phrase: string): string | null {
+  let end = phrase.length
+  for (const marker of actionMarkers) {
+    const index = phrase.indexOf(marker)
+    if (index >= 0) end = Math.min(end, index)
+  }
+  const candidate = phrase.slice(0, end)
+  return candidate.length >= 2 && candidate.length <= 4 ? candidate : null
+}
+
 function pickCharacterNames(text: string): string[] {
-  const matches = text.match(/[一-龥]{2,4}/g) ?? []
-  const candidates = matches.filter((word) =>
-    /少年|少女|男人|女人|老人|孩子|林|阿|小|王|李|张|陈/.test(word)
-  )
+  const candidates: string[] = []
+  const pattern = /(?:少年|少女|青年|女孩|男孩|老人|孩子)([一-龥]{1,12})/g
+  for (const match of text.matchAll(pattern)) {
+    const name = characterNameFromPhrase(match[1])
+    if (name) candidates.push(name)
+  }
+
   const unique = Array.from(new Set(candidates))
   if (unique.length >= 2) return unique.slice(0, 3)
   if (unique.length === 1) return [unique[0], '神秘同伴']
   return ['主角', '神秘同伴']
+}
+
+function groupSentences(sentences: string[], maxShots = 8): string[] {
+  if (sentences.length <= maxShots) return sentences
+  return Array.from({ length: maxShots }, (_, index) => {
+    const start = Math.floor(index * sentences.length / maxShots)
+    const end = Math.floor((index + 1) * sentences.length / maxShots)
+    return sentences.slice(start, end).join('。')
+  })
 }
 
 export function generateStoryPackage(input: GenerateStoryInput): StoryPackage {
@@ -41,26 +72,38 @@ export function generateStoryPackage(input: GenerateStoryInput): StoryPackage {
     }
   ]
 
-  const shots = usableSentences.slice(0, 8).map((sentence, index) => ({
-    id: `shot-${index + 1}`,
-    index: index + 1,
-    durationSeconds: 5,
-    sceneId: 'scene-1',
-    characterIds: characters.slice(0, Math.min(2, characters.length)).map((item) => item.id),
-    visual: sentence,
-    action: `${characters[0].name}在紧张氛围中做出反应`,
-    narration: sentence,
-    subtitle: sentence.length > 24 ? `${sentence.slice(0, 24)}…` : sentence,
-    camera: index % 2 === 0 ? '缓慢推近，突出角色表情' : '横向跟拍，保持动作连续',
-    prompt: [
-      'animation drama style',
-      'cinematic lighting',
-      'consistent character design',
-      characters.map((item) => `${item.name}: ${item.appearance}`).join('; '),
-      sentence
-    ].join(', '),
-    status: 'pending' as const
-  }))
+  const sceneContext = [
+    `动画短剧风格，统一场景`,
+    `色调：暖色调，柔光`,
+    `背景：${scenes[0].description}`,
+    `服装与发型保持一致`,
+    `电影级光影，9:16竖屏构图`
+  ]
+
+  const shots = groupSentences(usableSentences).map((sentence, index) => {
+    const mentionedCharacters = characters.filter((character) => sentence.includes(character.name))
+    const shotCharacters = mentionedCharacters.length > 0 ? mentionedCharacters : [characters[0]]
+    const characterContext = `角色：${shotCharacters.map((character) => `${character.name}（${character.appearance}）`).join('、')}`
+
+    const action = `${shotCharacters[0].name}在紧张氛围中做出反应`
+    const camera = index % 2 === 0 ? '缓慢推近，突出角色表情' : '横向跟拍，保持动作连续'
+
+    return {
+      id: `shot-${index + 1}`,
+      index: index + 1,
+      durationSeconds: 5,
+      sceneId: 'scene-1',
+      characterIds: shotCharacters.map((character) => character.id),
+      visual: sentence,
+      action,
+      narration: sentence,
+      subtitle: sentence.length > 24 ? `${sentence.slice(0, 24)}…` : sentence,
+      camera,
+      prompt: `${[...sceneContext, characterContext].join('，')}，镜头${index + 1}：${sentence}`,
+      videoPrompt: `${sentence}。${action}。${camera}。smooth continuous motion, cinematic movement, consistent character appearance`,
+      status: 'pending' as const
+    }
+  })
 
   return {
     summary: usableSentences.slice(0, 2).join('。'),

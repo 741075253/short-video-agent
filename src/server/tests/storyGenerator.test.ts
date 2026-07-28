@@ -17,7 +17,32 @@ describe('generateStoryPackage', () => {
       durationSeconds: 5,
       status: 'pending'
     })
-    expect(result.shots[0].prompt).toContain('animation drama')
+    expect(result.characters.map((character) => character.name)).toEqual(['林川', '阿月'])
+    expect(result.shots[0].characterIds).toEqual(['char-1'])
+    expect(result.shots[1].characterIds).toEqual(['char-2'])
+    expect(result.shots[0].prompt).not.toContain('阿月（')
+    expect(result.shots[0].prompt).toContain('动画短剧')
+    expect(result.shots[0].videoPrompt).toBe(
+      `${result.shots[0].visual}。${result.shots[0].action}。${result.shots[0].camera}。smooth continuous motion, cinematic movement, consistent character appearance`
+    )
+  })
+
+  it('covers the full source text while limiting the package to eight shots', () => {
+    const sourceText = Array.from({ length: 10 }, (_, index) => `第${index + 1}段剧情继续推进`).join('。')
+    const result = generateStoryPackage({ sourceText, style: 'animation_drama' })
+
+    expect(result.shots).toHaveLength(8)
+    expect(result.shots.at(-1)?.narration).toContain('第10段剧情继续推进')
+  })
+
+  it('does not split a Chinese sentence at an internal line break', () => {
+    const result = generateStoryPackage({
+      sourceText: '少年林川推开木门，看见城市燃烧。少女阿月说他们必须离开。黑云\n压下，街道尽头传来巨兽的吼声。',
+      style: 'animation_drama'
+    })
+
+    expect(result.shots).toHaveLength(3)
+    expect(result.shots[2].visual).toBe('黑云压下，街道尽头传来巨兽的吼声')
   })
 
   it('rejects text that is too short', () => {

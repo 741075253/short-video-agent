@@ -35,6 +35,8 @@ export const ShotSchema = z.object({
   prompt: z.string(),
   status: ShotStatusSchema,
   assetPath: z.string().optional(),
+  videoPrompt: z.string().optional(),
+  videoClipPath: z.string().optional(),
   errorMessage: z.string().optional()
 })
 export type Shot = z.infer<typeof ShotSchema>
@@ -64,8 +66,40 @@ export const GenerateStoryInputSchema = z.object({
 })
 export type GenerateStoryInput = z.infer<typeof GenerateStoryInputSchema>
 
-export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg', 'comfyui', 'dalle'])
+export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg'])
 export type VideoProviderName = z.infer<typeof VideoProviderNameSchema>
+
+export const VideoGenProviderNameSchema = z.enum(['mock', 'kling'])
+export type VideoGenProviderName = z.infer<typeof VideoGenProviderNameSchema>
+
+export const KlingConfigSchema = z.object({
+  accessKey: z.string(),
+  secretKey: z.string(),
+  model: z.string().min(1),
+  duration: z.coerce.number().int().positive(),
+  mode: z.enum(['std', 'pro']),
+  cfgScale: z.coerce.number().min(0).max(1),
+  concurrency: z.coerce.number().int().positive(),
+  pollIntervalMs: z.coerce.number().int().nonnegative(),
+  pollMaxRetries: z.coerce.number().int().positive()
+})
+export type KlingConfig = z.infer<typeof KlingConfigSchema>
+
+export const ClipResultSchema = z.object({
+  shotId: z.string(),
+  clipPath: z.string()
+})
+export type ClipResult = z.infer<typeof ClipResultSchema>
+
+export const ClipFailureSchema = z.object({
+  shotId: z.string(),
+  message: z.string()
+})
+export type ClipFailure = z.infer<typeof ClipFailureSchema>
+
+export type ClipGenerationResult =
+  | { success: true; clips: ClipResult[] }
+  | { success: false; failures: ClipFailure[]; completed: ClipResult[] }
 
 export const VideoGenerateInputSchema = z.object({
   project: ProjectSchema,
