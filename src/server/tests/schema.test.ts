@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { KlingConfigSchema, ProjectSchema } from '../../shared/schema'
+import { KlingConfigSchema, ProjectSchema, VideoGenerationOptionsSchema } from '../../shared/schema'
 
 describe('ProjectSchema', () => {
   it('accepts a complete project with one shot', () => {
@@ -53,17 +53,27 @@ describe('ProjectSchema', () => {
 describe('KlingConfigSchema', () => {
   it('coerces numeric environment values', () => {
     const config = KlingConfigSchema.parse({
-      accessKey: '',
-      secretKey: '',
-      model: 'kling-v1.6',
-      duration: '5',
-      mode: 'std',
-      cfgScale: '0.5',
+      apiKey: '',
+      baseUrl: 'https://api.klingai.com',
+      model: 'kling-v3',
       concurrency: '3',
       pollIntervalMs: '3000',
       pollMaxRetries: '80'
     })
 
-    expect(config).toMatchObject({ duration: 5, cfgScale: 0.5, concurrency: 3 })
+    expect(config).toMatchObject({ model: 'kling-v3', concurrency: 3 })
+  })
+
+  it('validates page generation options', () => {
+    expect(VideoGenerationOptionsSchema.parse({
+      durationSeconds: '8',
+      resolution: '1080p',
+      nativeAudio: false
+    })).toEqual({ durationSeconds: 8, resolution: '1080p', nativeAudio: false })
+    expect(() => VideoGenerationOptionsSchema.parse({
+      durationSeconds: 16,
+      resolution: '1080p',
+      nativeAudio: false
+    })).toThrow()
   })
 })

@@ -3,20 +3,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { KlingProvider, MockVideoGenProvider } from '../services/videoGenProviders'
-import type { KlingConfig, Shot } from '../../shared/schema'
+import type { KlingConfig, Shot, VideoGenerationOptions } from '../../shared/schema'
 
 let dir: string | undefined
 
 const config: KlingConfig = {
-  accessKey: 'access-key',
-  secretKey: 'secret-key',
-  model: 'kling-v1.6',
-  duration: 5,
-  mode: 'std',
-  cfgScale: 0.5,
+  apiKey: 'api-key',
+  baseUrl: 'https://api.test',
+  model: 'kling-v3',
   concurrency: 3,
   pollIntervalMs: 0,
   pollMaxRetries: 2
+}
+
+const options: VideoGenerationOptions = {
+  durationSeconds: 7,
+  resolution: '720p',
+  nativeAudio: true
 }
 
 const shots: Shot[] = [1, 2].map((index) => ({
@@ -59,28 +62,31 @@ describe('videoGenProviders', () => {
     expect((await stat(result.clips[0].clipPath)).size).toBe(0)
   })
 
-  it('submits Kling tasks with JWT auth and downloads completed clips', async () => {
+  it('submits Kling tasks with API Key auth and downloads completed clips', async () => {
     dir = await mkdtemp(join(tmpdir(), 'short-video-agent-video-gen-'))
     const imagePaths = await Promise.all(shots.map(async (shot) => {
       const path = join(dir!, `${shot.id}.png`)
       await writeFile(path, `image-${shot.id}`)
       return path
     }))
-    let submitIndex = 0
     const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input)
       if (url.endsWith('/v1/videos/image2video')) {
-        submitIndex += 1
-        const token = String((init?.headers as Record<string, string>).authorization).slice('Bearer '.length)
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'))
-        expect(payload.iss).toBe('access-key')
-        expect(payload.exp - payload.nbf).toBe(305)
+        expect((init?.headers as Record<string, string>).authorization).toBe('Bearer api-key')
         const requestBody = JSON.parse(String(init?.body))
-        expect(requestBody.prompt).toBe(`视频提示词 ${submitIndex}`)
-        expect(requestBody.image).toMatch(/^data:image\/png;base64,/)
-        return jsonResponse({ code: 0, data: { task_id: `task-${submitIndex}` } })
+        const shotNumber = Number(String(requestBody.prompt).match(/\d+$/)?.[0])
+        expect(requestBody.prompt).toBe(`视频提示词 ${shotNumber}`)
+        expect(requestBody.image).toBe(Buffer.from(`image-shot-${shotNumber}`).toString('base64'))
+        expect(requestBody).toMatchObject({
+          model_name: 'kling-v3',
+          duration: '7',
+          mode: 'std',
+          sound: 'on',
+          multi_shot: false
+        })
+        return jsonResponse({ code: 0, data: { task_id: `task-${shotNumber}` } })
       }
-      if (/\/v1\/videos\/task-\d$/.test(url)) {
+      if (/\/v1\/videos\/image2video\/task-\d$/.test(url)) {
         const taskId = url.split('/').at(-1)
         return jsonResponse({
           code: 0,
@@ -92,7 +98,7 @@ describe('videoGenProviders', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await new KlingProvider(config).generateClips(shots, imagePaths, dir)
+    const result = await new KlingProvider(config).generateClips(shots, imagePaths, dir, options)
 
     expect(result.success).toBe(true)
     if (!result.success) return
@@ -100,9 +106,8 @@ describe('videoGenProviders', () => {
     expect(await readFile(result.clips[0].clipPath, 'utf8')).toBe('video-data')
   })
 
-  it('cancels pending tasks when any Kling task fails', async () => {
+  it('keeps completed tasks when another Kling task fails', async () => {
     dir = await mkdtemp(join(tmpdir(), 'short-video-agent-video-gen-'))
-    const cancelled: string[] = []
     let submitIndex = 0
     vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
       const url = String(input)
@@ -113,11 +118,13 @@ describe('videoGenProviders', () => {
       if (url.endsWith('/task-1')) {
         return jsonResponse({ code: 0, data: { task_status: 'failed', task_status_msg: 'prompt rejected' } })
       }
-      if (url.endsWith('/task-2')) return jsonResponse({ code: 0, data: { task_status: 'processing' } })
-      if (url.endsWith('/task-2/cancel')) {
-        cancelled.push('task-2')
-        return jsonResponse({ code: 0, data: {} })
+      if (url.endsWith('/task-2')) {
+        return jsonResponse({
+          code: 0,
+          data: { task_status: 'succeed', task_result: { videos: [{ url: 'https://cdn.test/task-2.mp4' }] } }
+        })
       }
+      if (url.startsWith('https://cdn.test/')) return new Response('video-data')
       throw new Error(`unexpected URL: ${url}`)
     }))
 
@@ -130,6 +137,6 @@ describe('videoGenProviders', () => {
     expect(result.success).toBe(false)
     if (result.success) return
     expect(result.failures).toEqual([{ shotId: 'shot-1', message: 'prompt rejected' }])
-    expect(cancelled).toEqual(['task-2'])
+    expect(result.completed.map((clip) => clip.shotId)).toEqual(['shot-2'])
   })
 })

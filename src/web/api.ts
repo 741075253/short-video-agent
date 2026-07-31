@@ -1,6 +1,13 @@
-import type { Project, VideoGenerateResult } from '../shared/schema'
+import type {
+  Project,
+  VideoGenerateResult,
+  VideoGenerationOptions,
+  VideoGenerationProviderName,
+  VideoProviderDescriptor
+} from '../shared/schema'
 
-const API_BASE = 'http://127.0.0.1:5174/api'
+const viteEnv = (import.meta as ImportMeta & { env?: { VITE_API_BASE?: string } }).env
+const API_BASE = viteEnv?.VITE_API_BASE ?? 'http://127.0.0.1:5174/api'
 
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -15,6 +22,7 @@ async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  listVideoProviders: () => requestJson<VideoProviderDescriptor[]>('/video-providers'),
   listProjects: () => requestJson<Project[]>('/projects'),
   createProject: (input: { name: string; sourceText: string }) =>
     requestJson<Project>('/projects', { method: 'POST', body: JSON.stringify(input) }),
@@ -22,10 +30,15 @@ export const api = {
   saveProject: (project: Project) =>
     requestJson<Project>(`/projects/${project.id}`, { method: 'PUT', body: JSON.stringify(project) }),
   generateStory: (id: string) => requestJson<Project>(`/projects/${id}/generate-story`, { method: 'POST' }),
-  generateVideo: (id: string, provider: 'mock' | 'local_ffmpeg') =>
+  generateVideo: (id: string, input: {
+    provider: VideoGenerationProviderName
+    options: VideoGenerationOptions
+    shotId?: string
+    retryFailedOnly?: boolean
+  }) =>
     requestJson<VideoGenerateResult>(`/projects/${id}/generate-video`, {
       method: 'POST',
-      body: JSON.stringify({ provider })
+      body: JSON.stringify(input)
     }),
   exportUrl: (id: string, format: 'json' | 'markdown') => `${API_BASE}/projects/${id}/export/${format}`
 }

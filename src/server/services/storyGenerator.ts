@@ -1,4 +1,4 @@
-import type { GenerateStoryInput, StoryPackage } from '../../shared/schema'
+import type { GenerateStoryInput, Shot, StoryPackage } from '../../shared/schema'
 
 function splitSentences(text: string): string[] {
   const normalized = text
@@ -49,6 +49,64 @@ function groupSentences(sentences: string[], maxShots = 8): string[] {
   })
 }
 
+const motionDetails: Array<[string, (name: string) => string]> = [
+  ['推开', (name) => `${name}伸手握住门把，手臂发力将门向内推开并向前迈出一步`],
+  ['握紧', (name) => `${name}收紧手指牢牢握住手中的物品，手腕轻微转动，身体进入戒备姿态`],
+  ['转身', (name) => `${name}先转动头部看向身后，随后肩膀和身体连续转过去`],
+  ['抬头', (name) => `${name}缓慢抬起下巴和视线，眼神聚焦到前方高处`],
+  ['走进', (name) => `${name}连续向前迈步进入场景，衣摆和头发随步伐自然摆动`],
+  ['走出', (name) => `${name}连续向前迈步离开当前位置，身体重心随步伐自然移动`],
+  ['跑向', (name) => `${name}身体前倾并快速迈步跑向目标，双臂随步伐有力摆动`],
+  ['低声', (name) => `${name}略微靠近同伴，嘴唇自然开合并压低声音说话`],
+  ['喊', (name) => `${name}深吸一口气后张口呼喊，面部和肩颈随发声自然用力`],
+  ['笑', (name) => `${name}眼神逐渐放松，嘴角扬起并露出自然笑容`],
+  ['哭', (name) => `${name}眼眶逐渐湿润，呼吸颤动并抬手擦去泪水`],
+  ['看见', (name) => `${name}转动视线看向目标，身体短暂停住，表情产生明显变化`],
+  ['听见', (name) => `${name}动作突然停顿，侧头辨认声音来源并警觉地看向远处`],
+  ['拿', (name) => `${name}伸手抓住目标物品，将其稳定地拿到身前`],
+  ['举', (name) => `${name}握住物品并抬高手臂，将其举到视线前方`],
+  ['冲', (name) => `${name}猛然压低重心并向前冲出，动作快速而连贯`],
+  ['躲', (name) => `${name}迅速侧身降低重心，连续移动到遮挡物后方`]
+]
+
+function concreteAction(sentence: string, characterName: string): string {
+  const actions = motionDetails
+    .filter(([marker]) => sentence.includes(marker))
+    .slice(0, 3)
+    .map(([, describe]) => describe(characterName))
+  if (actions.length > 0) return actions.join('，随后')
+  return `${characterName}先转头观察周围，随后向前迈出一步并抬起手臂，表情随剧情由平静转为警觉`
+}
+
+export function buildVideoPrompt(visual: string, action: string, camera: string): string {
+  return `动作过程：${action}。表情和视线随动作自然变化。镜头：${camera}。${visual}中的角色外观、服装和场景保持一致，动作连续流畅，无静止定格。`
+}
+
+export function isLegacyVideoPrompt(prompt: string | undefined): boolean {
+  if (!prompt) return true
+  return prompt.includes('做出反应') || prompt.includes('smooth continuous motion, cinematic movement')
+}
+
+export function upgradeShotVideoPrompt(shot: Shot): Shot {
+  if (shot.videoPromptSource === 'manual') return shot
+  if (!shot.videoPromptSource && !isLegacyVideoPrompt(shot.videoPrompt)) {
+    return { ...shot, videoPromptSource: 'manual' }
+  }
+
+  const legacyName = shot.action.match(/^(.{1,6})在.*做出反应/)?.[1]
+  const nameFromVisual = pickCharacterNames(shot.visual)[0]
+  const characterName = legacyName || nameFromVisual || '角色'
+  const action = shot.action.includes('做出反应')
+    ? concreteAction(shot.visual, characterName)
+    : shot.action
+  return {
+    ...shot,
+    action,
+    videoPrompt: buildVideoPrompt(shot.visual, action, shot.camera),
+    videoPromptSource: 'generated'
+  }
+}
+
 export function generateStoryPackage(input: GenerateStoryInput): StoryPackage {
   const sourceText = input.sourceText.trim()
   if (sourceText.length < 10) throw new Error('小说文本至少需要 10 个字符')
@@ -85,7 +143,7 @@ export function generateStoryPackage(input: GenerateStoryInput): StoryPackage {
     const shotCharacters = mentionedCharacters.length > 0 ? mentionedCharacters : [characters[0]]
     const characterContext = `角色：${shotCharacters.map((character) => `${character.name}（${character.appearance}）`).join('、')}`
 
-    const action = `${shotCharacters[0].name}在紧张氛围中做出反应`
+    const action = concreteAction(sentence, shotCharacters[0].name)
     const camera = index % 2 === 0 ? '缓慢推近，突出角色表情' : '横向跟拍，保持动作连续'
 
     return {
@@ -100,7 +158,8 @@ export function generateStoryPackage(input: GenerateStoryInput): StoryPackage {
       subtitle: sentence.length > 24 ? `${sentence.slice(0, 24)}…` : sentence,
       camera,
       prompt: `${[...sceneContext, characterContext].join('，')}，镜头${index + 1}：${sentence}`,
-      videoPrompt: `${sentence}。${action}。${camera}。smooth continuous motion, cinematic movement, consistent character appearance`,
+      videoPrompt: buildVideoPrompt(sentence, action, camera),
+      videoPromptSource: 'generated' as const,
       status: 'pending' as const
     }
   })

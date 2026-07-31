@@ -1,14 +1,27 @@
 import { Router } from 'express'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { createProjectStore } from './services/projectStore'
-import { generateStoryPackage } from './services/storyGenerator'
+import { generateStoryPackage, upgradeShotVideoPrompt } from './services/storyGenerator'
 import { exportProjectJson, exportProjectMarkdown } from './services/exporters'
 import { createVideoProvider } from './services/videoProviders'
 import { createVideoGenProvider } from './services/videoGenProviders'
 import { createImageProvider } from './services/imageProviders'
 import { resolveFfmpegPath } from './config'
-import { VideoGenProviderNameSchema, VideoProviderNameSchema, type Project, type Shot } from '../shared/schema'
+import { canReuseVideoClip, createVideoClipMetadata } from './services/videoClipMetadata'
+import {
+  getVideoProviderDescriptor,
+  listVideoProviderDescriptors,
+  validateVideoGenerationOptions
+} from './services/videoProviderRegistry'
+import {
+  defaultVideoGenerationOptions,
+  VideoGenerationOptionsSchema,
+  VideoGenerationProviderNameSchema,
+  type Project,
+  type Shot
+} from '../shared/schema'
 
 function mergeGeneratedShots(project: Project, updatedShots: Shot[]): Project {
   if (!project.storyPackage) return project
@@ -26,6 +39,10 @@ function mergeGeneratedShots(project: Project, updatedShots: Shot[]): Project {
 export function createRoutes(dataDir: string) {
   const router = Router()
   const store = createProjectStore(dataDir)
+
+  router.get('/video-providers', (_req, res) => {
+    res.json(listVideoProviderDescriptors())
+  })
 
   router.get('/projects', async (_req, res, next) => {
     try {
@@ -110,7 +127,10 @@ export function createRoutes(dataDir: string) {
       const project = await store.getProject(req.params.id)
       if (!project) return res.status(404).json({ message: '项目不存在' })
       const body = req.body ?? {}
-      const providerName = VideoProviderNameSchema.or(VideoGenProviderNameSchema).parse(body.provider ?? 'mock')
+      const providerName = VideoGenerationProviderNameSchema.parse(body.provider ?? 'mock')
+      const options = VideoGenerationOptionsSchema.parse(body.options ?? defaultVideoGenerationOptions)
+      validateVideoGenerationOptions(providerName, options)
+      const providerDescriptor = getVideoProviderDescriptor(providerName)
       const shotId = body.shotId
       if (shotId !== undefined && typeof shotId !== 'string') {
         return res.status(400).json({ message: 'shotId 必须是字符串' })
@@ -120,6 +140,9 @@ export function createRoutes(dataDir: string) {
       if (shots.length === 0) return res.status(400).json({ message: '请先生成分镜' })
       if (shotId && !shots.some((shot) => shot.id === shotId)) {
         return res.status(404).json({ message: '镜头不存在' })
+      }
+      if (body.retryFailedOnly !== undefined && typeof body.retryFailedOnly !== 'boolean') {
+        return res.status(400).json({ message: 'retryFailedOnly 必须是布尔值' })
       }
 
       const outputDir = join(dataDir, 'outputs', project.id)
@@ -132,12 +155,22 @@ export function createRoutes(dataDir: string) {
         return res.json(result)
       }
 
-      if (providerName === 'kling') {
-        const targetShots = shotId ? shots.filter((shot) => shot.id === shotId) : shots
-        const missingImageShots = targetShots.filter((shot) => !shot.assetPath)
-        let workingShots = shots
-        let lastImageUrl: string | undefined
-        let lastGeneratedShotId: string | undefined
+      if (providerDescriptor.capabilities.imageToVideo) {
+        const requestedShots = shotId
+          ? shots.filter((shot) => shot.id === shotId)
+          : body.retryFailedOnly
+            ? shots.filter((shot) => shot.status === 'failed')
+            : shots
+        if (requestedShots.length === 0) {
+          return res.status(400).json({ message: '没有需要重试的失败分镜' })
+        }
+
+        const requestedIds = new Set(requestedShots.map((shot) => shot.id))
+        let workingShots = shots.map((shot) => requestedIds.has(shot.id)
+          ? upgradeShotVideoPrompt(shot)
+          : shot)
+        const missingImageShots = workingShots.filter((shot) =>
+          requestedIds.has(shot.id) && (!shot.assetPath || !existsSync(shot.assetPath)))
 
         if (missingImageShots.length > 0) {
           const imageProvider = createImageProvider()
@@ -150,14 +183,18 @@ export function createRoutes(dataDir: string) {
               : await Promise.all(missingImageShots.map((shot) => imageProvider.generateImage(shot, outputDir)))
             const imagePathById = new Map(missingImageShots.map((shot, index) => [shot.id, imagePaths[index]]))
             workingShots = shots.map((shot) => {
+              const upgraded = requestedIds.has(shot.id) ? upgradeShotVideoPrompt(shot) : shot
               const imagePath = imagePathById.get(shot.id)
               return imagePath
-                ? { ...shot, assetPath: imagePath, errorMessage: undefined }
-                : shot
+                ? {
+                    ...upgraded,
+                    assetPath: imagePath,
+                    videoClipPath: undefined,
+                    videoClipMetadata: undefined,
+                    errorMessage: undefined
+                  }
+                : upgraded
             })
-            const providerLastImageUrl = (imageProvider as typeof imageProvider & { lastImageUrl?: string | null }).lastImageUrl
-            lastImageUrl = providerLastImageUrl ?? undefined
-            lastGeneratedShotId = missingImageShots.at(-1)?.id
           } catch (error) {
             const message = error instanceof Error ? error.message : '图片生成失败'
             const missingIds = new Set(missingImageShots.map((shot) => shot.id))
@@ -173,58 +210,108 @@ export function createRoutes(dataDir: string) {
           }
         }
 
-        const targetWorkingShots = shotId
-          ? workingShots.filter((shot) => shot.id === shotId)
-          : workingShots
-        const imageInputs = targetWorkingShots.map((shot) =>
-          shot.id === lastGeneratedShotId && lastImageUrl ? lastImageUrl : shot.assetPath!
-        )
-        const clipResult = await createVideoGenProvider('kling').generateClips(
-          targetWorkingShots,
-          imageInputs,
-          outputDir
-        )
+        const targetWorkingShots = workingShots.filter((shot) => requestedIds.has(shot.id))
+        const imageInputs = targetWorkingShots.map((shot) => shot.assetPath!)
+        const videoGenProvider = createVideoGenProvider(providerName)
+        const expectedMetadata = await Promise.all(targetWorkingShots.map((shot, index) =>
+          createVideoClipMetadata(
+            shot,
+            imageInputs[index],
+            videoGenProvider.name,
+            videoGenProvider.model,
+            options
+          )))
+        const metadataById = new Map(targetWorkingShots.map((shot, index) => [shot.id, expectedMetadata[index]]))
+        const generationShots = targetWorkingShots.filter((shot, index) =>
+          !canReuseVideoClip(shot, expectedMetadata[index]))
+        const generationImages = generationShots.map((shot) => shot.assetPath!)
+        const clipResult = generationShots.length > 0
+          ? await videoGenProvider.generateClips(
+              generationShots,
+              generationImages,
+              outputDir,
+              options
+            )
+          : { success: true as const, clips: [] }
 
-        if (!clipResult.success) {
-          const failureById = new Map(clipResult.failures.map((failure) => [failure.shotId, failure.message]))
-          const completedById = new Map(clipResult.completed.map((clip) => [clip.shotId, clip.clipPath]))
-          const failedShots = workingShots.map((shot) => {
-            const failure = failureById.get(shot.id)
-            const videoClipPath = completedById.get(shot.id)
-            if (!failure && !videoClipPath) return shot
+        const generatedClips = clipResult.success ? clipResult.clips : clipResult.completed
+        const failures = clipResult.success ? [] : clipResult.failures
+        const failureById = new Map(failures.map((failure) => [failure.shotId, failure.message]))
+        const clipPathById = new Map(generatedClips.map((clip) => [clip.shotId, clip.clipPath]))
+        const clipShots = workingShots.map((shot) => {
+          const failure = failureById.get(shot.id)
+          const generatedClipPath = clipPathById.get(shot.id)
+          const metadata = metadataById.get(shot.id)
+          if (failure) {
+            return { ...shot, status: 'failed' as const, errorMessage: failure }
+          }
+          if (generatedClipPath && metadata) {
             return {
               ...shot,
-              videoClipPath: videoClipPath ?? shot.videoClipPath,
-              status: failure ? 'failed' as const : shot.status,
-              errorMessage: failure ?? shot.errorMessage
+              videoClipPath: generatedClipPath,
+              videoClipMetadata: metadata,
+              status: 'ready' as const,
+              errorMessage: undefined
             }
+          }
+          if (metadata && canReuseVideoClip(shot, metadata)) {
+            return { ...shot, status: 'ready' as const, errorMessage: undefined }
+          }
+          return shot
+        })
+        const savedWithClips = await store.saveProject(mergeGeneratedShots(project, clipShots))
+        const completed = targetWorkingShots
+          .filter((shot) => {
+            const updated = clipShots.find((candidate) => candidate.id === shot.id)
+            return updated?.videoClipPath && !failureById.has(shot.id)
           })
-          await store.saveProject(mergeGeneratedShots(project, failedShots))
-          return res.status(502).json({
-            message: 'Kling 视频片段生成失败，请根据 failures 调整对应镜头的 videoPrompt',
-            failures: clipResult.failures,
-            completed: clipResult.completed
+          .map((shot) => ({
+            shotId: shot.id,
+            clipPath: clipShots.find((candidate) => candidate.id === shot.id)!.videoClipPath!
+          }))
+
+        if (failures.length > 0) {
+          return res.json({
+            provider: providerName,
+            projectId: project.id,
+            updatedShots: clipShots.filter((shot) => requestedIds.has(shot.id)),
+            errors: failures,
+            failures,
+            completed
           })
         }
 
-        const clipPathById = new Map(clipResult.clips.map((clip) => [clip.shotId, clip.clipPath]))
-        const clipShots = workingShots.map((shot) => {
-          const videoClipPath = clipPathById.get(shot.id)
-          return videoClipPath
-            ? { ...shot, videoClipPath, errorMessage: undefined }
-            : shot
-        })
+        const allShots = savedWithClips.storyPackage?.shots ?? []
+        const allMetadata = await Promise.all(allShots.map((shot) =>
+          createVideoClipMetadata(
+            shot,
+            shot.assetPath || '',
+            videoGenProvider.name,
+            videoGenProvider.model,
+            options
+          )))
+        const allReady = allShots.length > 0 && allShots.every((shot, index) =>
+          canReuseVideoClip(shot, allMetadata[index]))
+        if (!allReady) {
+          return res.json({
+            provider: providerName,
+            projectId: project.id,
+            updatedShots: clipShots.filter((shot) => requestedIds.has(shot.id)),
+            errors: [],
+            completed
+          })
+        }
+
         const syntheticProject = {
-          ...project,
-          storyPackage: project.storyPackage && { ...project.storyPackage, shots: clipShots }
+          ...savedWithClips,
+          storyPackage: savedWithClips.storyPackage && { ...savedWithClips.storyPackage, shots: allShots }
         }
         const result = await createVideoProvider('local_ffmpeg', outputDir, ffmpegPath).generate({
           project: syntheticProject,
-          provider: 'local_ffmpeg',
-          shotId
+          provider: 'local_ffmpeg'
         })
-        await store.saveProject(mergeGeneratedShots(project, result.updatedShots))
-        return res.json(result)
+        await store.saveProject(mergeGeneratedShots(savedWithClips, result.updatedShots))
+        return res.json({ ...result, provider: providerName, completed, failures: [] })
       }
 
       // local_ffmpeg：先生图（如已配置），再合成视频
@@ -243,7 +330,14 @@ export function createRoutes(dataDir: string) {
         imageShots.push(...shots.map((shot) => {
           const imagePath = imagePathById.get(shot.id)
           return imagePath
-            ? { ...shot, status: 'ready' as const, assetPath: imagePath, errorMessage: undefined }
+            ? {
+                ...shot,
+                status: 'ready' as const,
+                assetPath: imagePath,
+                videoClipPath: undefined,
+                videoClipMetadata: undefined,
+                errorMessage: undefined
+              }
             : shot
         }))
       } catch (error) {

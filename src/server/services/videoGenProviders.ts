@@ -1,5 +1,3 @@
-import { createHmac } from 'node:crypto'
-import { extname } from 'node:path'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { klingConfig } from '../config'
@@ -9,14 +7,20 @@ import type {
   ClipResult,
   KlingConfig,
   Shot,
-  VideoGenProviderName
+  VideoGenerationOptions,
+  VideoGenerationProviderName
 } from '../../shared/schema'
-
-const KLING_API_BASE = 'https://api.kling.kuaishou.com'
+import { defaultVideoGenerationOptions } from '../../shared/schema'
 
 export interface VideoGenProvider {
-  readonly name: VideoGenProviderName
-  generateClips(shots: Shot[], imageUrls: string[], outputDir: string): Promise<ClipGenerationResult>
+  readonly name: VideoGenerationProviderName
+  readonly model: string
+  generateClips(
+    shots: Shot[],
+    imageUrls: string[],
+    outputDir: string,
+    options?: VideoGenerationOptions
+  ): Promise<ClipGenerationResult>
 }
 
 interface SubmittedTask {
@@ -36,39 +40,30 @@ interface KlingResponse<T> {
   data?: T
 }
 
-function base64Url(value: string | Buffer): string {
-  return Buffer.from(value).toString('base64url')
-}
-
-function mimeTypeFor(path: string): string {
-  switch (extname(path).toLowerCase()) {
-    case '.jpg':
-    case '.jpeg': return 'image/jpeg'
-    case '.webp': return 'image/webp'
-    case '.bmp': return 'image/bmp'
-    default: return 'image/png'
-  }
-}
-
 async function imageInput(source: string): Promise<string> {
-  if (/^(?:https?:|data:)/i.test(source)) return source
+  if (/^https?:/i.test(source)) return source
+  if (/^data:/i.test(source)) return source.replace(/^data:[^;]+;base64,/i, '')
   const content = await readFile(source)
-  return `data:${mimeTypeFor(source)};base64,${content.toString('base64')}`
+  return content.toString('base64')
 }
 
 export class KlingProvider implements VideoGenProvider {
   readonly name = 'kling' as const
+  readonly model: string
 
-  constructor(private readonly config: KlingConfig = klingConfig) {}
+  constructor(private readonly config: KlingConfig = klingConfig) {
+    this.model = config.model
+  }
 
   async generateClips(
     shots: Shot[],
     imageUrls: string[],
-    outputDir: string
+    outputDir: string,
+    options: VideoGenerationOptions = defaultVideoGenerationOptions
   ): Promise<ClipGenerationResult> {
     if (shots.length === 0) return { success: true, clips: [] }
-    if (!this.config.accessKey || !this.config.secretKey) {
-      return this.failureForAll(shots, '未配置 Kling 凭据，请设置 KLING_ACCESS_KEY 和 KLING_SECRET_KEY')
+    if (!this.config.apiKey) {
+      return this.failureForAll(shots, '未配置 Kling API Key，请设置 KLING_API_KEY')
     }
     if (shots.length !== imageUrls.length) {
       return this.failureForAll(shots, `Kling 输入图片数量 ${imageUrls.length} 与镜头数量 ${shots.length} 不一致`)
@@ -76,30 +71,30 @@ export class KlingProvider implements VideoGenProvider {
 
     await mkdir(outputDir, { recursive: true })
     const submitted: SubmittedTask[] = []
+    const submissionFailures: ClipFailure[] = []
 
     for (let offset = 0; offset < shots.length; offset += this.config.concurrency) {
       const batch = shots.slice(offset, offset + this.config.concurrency)
       const results: Array<{ task: SubmittedTask } | { failure: ClipFailure }> = await Promise.all(batch.map(async (shot, index) => {
         try {
-          const taskId = await this.submitTask(shot, imageUrls[offset + index])
+          const taskId = await this.submitTask(shot, imageUrls[offset + index], options)
           return { task: { shot, taskId } }
         } catch (error) {
           return { failure: { shotId: shot.id, message: this.errorMessage(error) } }
         }
       }))
 
-      const failures: ClipFailure[] = []
       for (const result of results) {
         if ('task' in result) submitted.push(result.task)
-        else failures.push(result.failure)
-      }
-      if (failures.length > 0) {
-        await this.cancelTasks(submitted)
-        return { success: false, failures, completed: [] }
+        else submissionFailures.push(result.failure)
       }
     }
 
-    return this.pollAndDownload(submitted, outputDir)
+    const polled = await this.pollAndDownload(submitted, outputDir)
+    if (submissionFailures.length === 0) return polled
+    return polled.success
+      ? { success: false, failures: submissionFailures, completed: polled.clips }
+      : { success: false, failures: [...submissionFailures, ...polled.failures], completed: polled.completed }
   }
 
   private failureForAll(shots: Shot[], message: string): ClipGenerationResult {
@@ -110,20 +105,11 @@ export class KlingProvider implements VideoGenProvider {
     }
   }
 
-  private jwt(): string {
-    const now = Math.floor(Date.now() / 1000)
-    const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
-    const payload = base64Url(JSON.stringify({ iss: this.config.accessKey, nbf: now - 5, exp: now + 300 }))
-    const unsigned = `${header}.${payload}`
-    const signature = createHmac('sha256', this.config.secretKey).update(unsigned).digest('base64url')
-    return `${unsigned}.${signature}`
-  }
-
   private async request<T>(path: string, init?: RequestInit): Promise<T> {
-    const response = await fetch(`${KLING_API_BASE}${path}`, {
+    const response = await fetch(`${this.config.baseUrl.replace(/\/$/, '')}${path}`, {
       ...init,
       headers: {
-        authorization: `Bearer ${this.jwt()}`,
+        authorization: `Bearer ${this.config.apiKey}`,
         ...(init?.body ? { 'content-type': 'application/json' } : {}),
         ...init?.headers
       }
@@ -142,16 +128,21 @@ export class KlingProvider implements VideoGenProvider {
     return body.data
   }
 
-  private async submitTask(shot: Shot, imageUrl: string): Promise<string> {
+  private async submitTask(
+    shot: Shot,
+    imageUrl: string,
+    options: VideoGenerationOptions
+  ): Promise<string> {
     const data = await this.request<{ task_id?: string; taskId?: string }>('/v1/videos/image2video', {
       method: 'POST',
       body: JSON.stringify({
-        model: this.config.model,
+        model_name: this.config.model,
         image: await imageInput(imageUrl),
         prompt: shot.videoPrompt || shot.prompt || shot.visual,
-        duration: String(this.config.duration),
-        cfg_scale: this.config.cfgScale,
-        mode: this.config.mode
+        duration: String(options.durationSeconds),
+        mode: options.resolution === '1080p' ? 'pro' : 'std',
+        sound: options.nativeAudio ? 'on' : 'off',
+        multi_shot: false
       })
     })
     const taskId = data.task_id ?? data.taskId
@@ -168,7 +159,7 @@ export class KlingProvider implements VideoGenProvider {
       task_result?: { videos?: Array<{ url?: string }> }
       videos?: Array<{ url?: string }>
       video_url?: string
-    }>(`/v1/videos/${taskId}`)
+    }>(`/v1/videos/image2video/${taskId}`)
     const rawStatus = (data.task_status ?? data.status ?? '').toLowerCase()
     const message = data.task_status_msg ?? data.message
     if (['failed', 'failure', 'error'].includes(rawStatus)) return { status: 'failed', message }
@@ -183,6 +174,7 @@ export class KlingProvider implements VideoGenProvider {
   private async pollAndDownload(tasks: SubmittedTask[], outputDir: string): Promise<ClipGenerationResult> {
     const pending = new Map(tasks.map((task) => [task.taskId, task]))
     const completed: ClipResult[] = []
+    const failures: ClipFailure[] = []
 
     for (let attempt = 0; attempt < this.config.pollMaxRetries && pending.size > 0; attempt++) {
       if (this.config.pollIntervalMs > 0) {
@@ -196,7 +188,6 @@ export class KlingProvider implements VideoGenProvider {
         }
       }))
 
-      const failures: ClipFailure[] = []
       for (const { task, result } of statuses) {
         if (result.status === 'failed') {
           failures.push({ shotId: task.shot.id, message: result.message || 'Kling 视频生成失败，请调整 videoPrompt 后重试' })
@@ -215,34 +206,20 @@ export class KlingProvider implements VideoGenProvider {
         }
       }
 
-      if (failures.length > 0) {
-        await this.cancelTasks(Array.from(pending.values()))
-        return { success: false, failures, completed }
-      }
     }
 
     if (pending.size > 0) {
-      const failures = Array.from(pending.values()).map(({ shot }) => ({
+      failures.push(...Array.from(pending.values()).map(({ shot }) => ({
         shotId: shot.id,
         message: `Kling 任务轮询超时，请缩短或简化 videoPrompt 后重试`
-      }))
-      await this.cancelTasks(Array.from(pending.values()))
-      return { success: false, failures, completed }
+      })))
     }
 
     const order = new Map(tasks.map((task, index) => [task.shot.id, index]))
     completed.sort((a, b) => (order.get(a.shotId) ?? 0) - (order.get(b.shotId) ?? 0))
-    return { success: true, clips: completed }
-  }
-
-  private async cancelTasks(tasks: SubmittedTask[]): Promise<void> {
-    await Promise.all(tasks.map(async ({ taskId }) => {
-      try {
-        await this.request(`/v1/videos/${taskId}/cancel`, { method: 'POST' })
-      } catch {
-        // 取消为尽力操作，不覆盖原始生成失败信息。
-      }
-    }))
+    return failures.length > 0
+      ? { success: false, failures, completed }
+      : { success: true, clips: completed }
   }
 
   private async download(url: string, outputPath: string): Promise<void> {
@@ -258,6 +235,7 @@ export class KlingProvider implements VideoGenProvider {
 
 export class MockVideoGenProvider implements VideoGenProvider {
   readonly name = 'mock' as const
+  readonly model = 'mock'
 
   async generateClips(shots: Shot[], _imageUrls: string[], outputDir: string): Promise<ClipGenerationResult> {
     await mkdir(outputDir, { recursive: true })
@@ -271,8 +249,14 @@ export class MockVideoGenProvider implements VideoGenProvider {
 }
 
 export function createVideoGenProvider(
-  name: VideoGenProviderName,
+  name: VideoGenerationProviderName,
   config: KlingConfig = klingConfig
 ): VideoGenProvider {
-  return name === 'kling' ? new KlingProvider(config) : new MockVideoGenProvider()
+  const factories: Partial<Record<VideoGenerationProviderName, () => VideoGenProvider>> = {
+    kling: () => new KlingProvider(config),
+    mock: () => new MockVideoGenProvider()
+  }
+  const factory = factories[name]
+  if (!factory) throw new Error(`视频 Provider ${name} 不支持 AI 图生视频`)
+  return factory()
 }

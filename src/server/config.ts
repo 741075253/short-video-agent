@@ -49,12 +49,9 @@ export const imageGenConfig = {
 
 /** Kling 图生视频配置 */
 export const klingConfig = KlingConfigSchema.parse({
-  accessKey: process.env.KLING_ACCESS_KEY || '',
-  secretKey: process.env.KLING_SECRET_KEY || '',
-  model: process.env.KLING_MODEL || 'kling-v1.6',
-  duration: process.env.KLING_DURATION || '5',
-  mode: process.env.KLING_MODE || 'std',
-  cfgScale: process.env.KLING_CFG_SCALE || '0.5',
+  apiKey: process.env.KLING_API_KEY || '',
+  baseUrl: process.env.KLING_BASE_URL || 'https://api.klingai.com',
+  model: process.env.KLING_MODEL || 'kling-v3',
   concurrency: process.env.KLING_CONCURRENCY || '3',
   pollIntervalMs: process.env.KLING_POLL_INTERVAL_MS || '3000',
   pollMaxRetries: process.env.KLING_POLL_MAX_RETRIES || '80'
