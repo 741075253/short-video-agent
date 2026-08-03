@@ -96,10 +96,45 @@ export const GenerateStoryInputSchema = z.object({
 })
 export type GenerateStoryInput = z.infer<typeof GenerateStoryInputSchema>
 
+export const TextGenerationModelSchema = z.enum([
+  'qwen3.8-max-preview',
+  'qwen3.7-max',
+  'qwen3.7-plus',
+  'qwen3.6-flash',
+  'qwen3.8-max',
+  'deepseek-v4-flash-0731',
+  'deepseek-v4-pro',
+  'glm-5.2'
+])
+export type TextGenerationModel = z.infer<typeof TextGenerationModelSchema>
+
+export const ImageGenerationModelSchema = z.enum(['wan2.7-image', 'wan2.7-image-pro'])
+export type ImageGenerationModel = z.infer<typeof ImageGenerationModelSchema>
+
+export const HappyHorseModelSchema = z.enum([
+  'happyhorse-1.1-i2v',
+  'happyhorse-1.1-t2v',
+  'happyhorse-1.1-r2v'
+])
+export type HappyHorseModel = z.infer<typeof HappyHorseModelSchema>
+
+export const modelCatalog = {
+  text: TextGenerationModelSchema.options,
+  image: ImageGenerationModelSchema.options,
+  tts: ['qwen-audio-3.0-tts-plus'] as const
+}
+
 export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg'])
 export type VideoProviderName = z.infer<typeof VideoProviderNameSchema>
 
-export const VideoGenerationProviderNameSchema = z.enum(['mock', 'local_ffmpeg', 'kling'])
+export const VideoGenerationProviderNameSchema = z.enum([
+  'mock',
+  'local_ffmpeg',
+  'kling',
+  'happyhorse_i2v',
+  'happyhorse_t2v',
+  'happyhorse_r2v'
+])
 export type VideoGenerationProviderName = z.infer<typeof VideoGenerationProviderNameSchema>
 
 export type VideoProviderCapabilities = {
@@ -107,6 +142,7 @@ export type VideoProviderCapabilities = {
   resolutions?: VideoResolution[]
   defaultResolution?: VideoResolution
   nativeAudio: boolean
+  aiVideo: boolean
   imageToVideo: boolean
   staticFallback: boolean
 }
@@ -126,6 +162,16 @@ export const KlingConfigSchema = z.object({
   pollMaxRetries: z.coerce.number().int().positive()
 })
 export type KlingConfig = z.infer<typeof KlingConfigSchema>
+
+export const HappyHorseConfigSchema = z.object({
+  apiKey: z.string(),
+  baseUrl: z.string().url(),
+  model: HappyHorseModelSchema,
+  concurrency: z.coerce.number().int().positive(),
+  pollIntervalMs: z.coerce.number().int().nonnegative(),
+  pollMaxRetries: z.coerce.number().int().positive()
+})
+export type HappyHorseConfig = z.infer<typeof HappyHorseConfigSchema>
 
 export const ClipResultSchema = z.object({
   shotId: z.string(),

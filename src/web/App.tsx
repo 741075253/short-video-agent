@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   defaultVideoGenerationOptions,
+  modelCatalog,
+  type ImageGenerationModel,
   type Project,
+  type TextGenerationModel,
   type VideoGenerationOptions,
   type VideoGenerationProviderName,
   type VideoProviderDescriptor
@@ -15,8 +18,11 @@ export function App() {
   const [sourceText, setSourceText] = useState('')
   const [message, setMessage] = useState('')
   const [providers, setProviders] = useState<VideoProviderDescriptor[]>([])
-  const [selectedProvider, setSelectedProvider] = useState<VideoGenerationProviderName>('kling')
+  const [selectedProvider, setSelectedProvider] = useState<VideoGenerationProviderName>('happyhorse_i2v')
+  const [selectedTextModel, setSelectedTextModel] = useState<TextGenerationModel>('qwen3.8-max')
+  const [selectedImageModel, setSelectedImageModel] = useState<ImageGenerationModel>('wan2.7-image-pro')
   const [videoOptions, setVideoOptions] = useState<VideoGenerationOptions>({ ...defaultVideoGenerationOptions })
+  const [generatingImages, setGeneratingImages] = useState(false)
   const [generatingShotId, setGeneratingShotId] = useState<string | null>(null)
 
   async function refreshProjects() {
@@ -40,8 +46,8 @@ export function App() {
 
   function openProject(project: Project) {
     setCurrent(project)
-    setSelectedProvider('kling')
-    resetVideoOptions(providers.find((provider) => provider.id === 'kling'))
+    setSelectedProvider('happyhorse_i2v')
+    resetVideoOptions(providers.find((provider) => provider.id === 'happyhorse_i2v'))
   }
 
   async function createProject() {
@@ -55,7 +61,7 @@ export function App() {
   async function generateStory() {
     if (!current) return
     setMessage('正在生成分镜脚本包...')
-    const project = await api.generateStory(current.id)
+    const project = await api.generateStory(current.id, selectedTextModel)
     setCurrent(project)
     await refreshProjects()
     setMessage('分镜脚本包已生成')
@@ -68,6 +74,21 @@ export function App() {
     setCurrent(project)
     await refreshProjects()
     setMessage('已保存')
+  }
+
+  async function generateImages() {
+    if (!current) return
+    setGeneratingImages(true)
+    setMessage(`正在使用 ${selectedImageModel} 生成分镜图片...`)
+    try {
+      const saved = await api.saveProject(current)
+      const project = await api.generateImages(saved.id, selectedImageModel)
+      setCurrent(project)
+      await refreshProjects()
+      setMessage('分镜图片已生成')
+    } finally {
+      setGeneratingImages(false)
+    }
   }
 
   async function generateVideo(shotId?: string, retryFailedOnly = false) {
@@ -128,6 +149,15 @@ export function App() {
         <section className="panel wide">
           <h2>{current.name}</h2>
           <div className="actions">
+            <label className="compactControl">
+              分镜模型
+              <select
+                value={selectedTextModel}
+                onChange={(event) => setSelectedTextModel(event.target.value as TextGenerationModel)}
+              >
+                {modelCatalog.text.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+            </label>
             <button onClick={() => generateStory().catch((error: Error) => setMessage(error.message))}>生成分镜</button>
             <button onClick={() => saveProject().catch((error: Error) => setMessage(error.message))}>保存修改</button>
             <a href={api.exportUrl(current.id, 'json')} target="_blank" rel="noreferrer">导出 JSON</a>
@@ -136,7 +166,24 @@ export function App() {
 
           <div className="generationControls">
             <label className="compactControl">
-              视频平台
+              生图模型
+              <select
+                value={selectedImageModel}
+                onChange={(event) => setSelectedImageModel(event.target.value as ImageGenerationModel)}
+              >
+                {modelCatalog.image.map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={generatingImages || generatingShotId !== null || !current.storyPackage}
+              onClick={() => generateImages().catch((error: Error) => setMessage(error.message))}
+            >
+              {generatingImages ? '图片生成中...' : '生成分镜图片'}
+            </button>
+
+            <label className="compactControl">
+              视频模型
               <select
                 value={selectedProvider}
                 onChange={(event) => {
@@ -199,7 +246,7 @@ export function App() {
 
             <button
               className="generateButton"
-              disabled={generatingShotId !== null || !current.storyPackage}
+              disabled={generatingImages || generatingShotId !== null || !current.storyPackage}
               onClick={() => generateVideo().catch((error: Error) => setMessage(error.message))}
             >
               {generatingShotId === 'all' ? '生成中...' : '生成视频'}

@@ -1,5 +1,7 @@
 import type {
+  ImageGenerationModel,
   Project,
+  TextGenerationModel,
   VideoGenerateResult,
   VideoGenerationOptions,
   VideoGenerationProviderName,
@@ -29,7 +31,16 @@ export const api = {
   getProject: (id: string) => requestJson<Project>(`/projects/${id}`),
   saveProject: (project: Project) =>
     requestJson<Project>(`/projects/${project.id}`, { method: 'PUT', body: JSON.stringify(project) }),
-  generateStory: (id: string) => requestJson<Project>(`/projects/${id}/generate-story`, { method: 'POST' }),
+  generateStory: (id: string, model: TextGenerationModel) =>
+    requestJson<Project>(`/projects/${id}/generate-story`, {
+      method: 'POST',
+      body: JSON.stringify({ model })
+    }),
+  generateImages: (id: string, model: ImageGenerationModel) =>
+    requestJson<Project>(`/projects/${id}/generate-images`, {
+      method: 'POST',
+      body: JSON.stringify({ model })
+    }),
   generateVideo: (id: string, input: {
     provider: VideoGenerationProviderName
     options: VideoGenerationOptions

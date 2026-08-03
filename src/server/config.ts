@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { KlingConfigSchema } from '../shared/schema'
+import { HappyHorseConfigSchema, KlingConfigSchema } from '../shared/schema'
 
 // ========== .env 文件加载（优先级最低，不会覆盖已有环境变量） ==========
 
@@ -39,13 +39,48 @@ export const ffmpegConfig = {
   fallback: 'ffmpeg' as const,
 }
 
-/** 图片生成配置（兼容 OpenAI API 与 DashScope） */
+/** 阿里云百炼 Token Plan 配置 */
+function normalizeTokenPlanApiKey(value: string | undefined): string {
+  const apiKey = value?.trim() ?? ''
+  return apiKey.startsWith('ssk-sp-') ? apiKey.slice(1) : apiKey
+}
+
+const tokenPlanApiKeyCandidates = [
+  process.env.token_plan_api_key,
+  process.env.qian_wen_api_key,
+  process.env.IMAGE_GEN_API_KEY
+].map(normalizeTokenPlanApiKey).filter(Boolean)
+
+export const tokenPlanConfig = {
+  apiKey: tokenPlanApiKeyCandidates[0] ?? '',
+  baseUrl: process.env.TOKEN_PLAN_BASE_URL || 'https://token-plan.cn-beijing.maas.aliyuncs.com',
+  textModel: process.env.TEXT_GEN_MODEL || 'qwen3.8-max',
+  ttsModel: process.env.TTS_MODEL || 'qwen-audio-3.0-tts-plus'
+}
+
+export const textGenConfig = {
+  apiKey: tokenPlanConfig.apiKey,
+  baseUrl: process.env.TEXT_GEN_BASE_URL || `${tokenPlanConfig.baseUrl}/compatible-mode/v1`,
+  model: tokenPlanConfig.textModel
+}
+
+/** 图片生成配置（兼容 OpenAI API 与百炼原生 API） */
 export const imageGenConfig = {
-  apiKey: process.env.IMAGE_GEN_API_KEY || '',
-  baseUrl: process.env.IMAGE_GEN_BASE_URL || 'https://api.openai.com/v1',
-  model: process.env.IMAGE_GEN_MODEL || 'gpt-image-2',
+  apiKey: tokenPlanConfig.apiKey || process.env.IMAGE_GEN_API_KEY || '',
+  baseUrl: process.env.IMAGE_GEN_BASE_URL || tokenPlanConfig.baseUrl,
+  model: process.env.IMAGE_GEN_MODEL || 'wan2.7-image-pro',
   size: process.env.IMAGE_GEN_SIZE || '1024x1792',
 }
+
+/** HappyHorse 视频生成配置 */
+export const happyHorseConfig = HappyHorseConfigSchema.parse({
+  apiKey: tokenPlanConfig.apiKey,
+  baseUrl: process.env.HAPPYHORSE_BASE_URL || tokenPlanConfig.baseUrl,
+  model: process.env.HAPPYHORSE_MODEL || 'happyhorse-1.1-i2v',
+  concurrency: process.env.HAPPYHORSE_CONCURRENCY || '3',
+  pollIntervalMs: process.env.HAPPYHORSE_POLL_INTERVAL_MS || '15000',
+  pollMaxRetries: process.env.HAPPYHORSE_POLL_MAX_RETRIES || '40'
+})
 
 /** Kling 图生视频配置 */
 export const klingConfig = KlingConfigSchema.parse({

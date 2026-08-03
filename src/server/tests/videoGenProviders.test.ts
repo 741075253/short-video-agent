@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { KlingProvider, MockVideoGenProvider } from '../services/videoGenProviders'
-import type { KlingConfig, Shot, VideoGenerationOptions } from '../../shared/schema'
+import { HappyHorseProvider, KlingProvider, MockVideoGenProvider } from '../services/videoGenProviders'
+import type { HappyHorseConfig, HappyHorseModel, KlingConfig, Shot, VideoGenerationOptions } from '../../shared/schema'
 
 let dir: string | undefined
 
@@ -138,5 +138,55 @@ describe('videoGenProviders', () => {
     if (result.success) return
     expect(result.failures).toEqual([{ shotId: 'shot-1', message: 'prompt rejected' }])
     expect(result.completed.map((clip) => clip.shotId)).toEqual(['shot-2'])
+  })
+
+  it.each([
+    ['happyhorse-1.1-i2v', 'first_frame', false],
+    ['happyhorse-1.1-t2v', undefined, true],
+    ['happyhorse-1.1-r2v', 'reference_image', true]
+  ] as const)('submits %s tasks using the Token Plan media API', async (model, mediaType, hasRatio) => {
+    dir = await mkdtemp(join(tmpdir(), 'short-video-agent-happyhorse-'))
+    const imagePath = join(dir, 'shot-1.png')
+    await writeFile(imagePath, 'image-data')
+    const happyHorseConfig: HappyHorseConfig = {
+      apiKey: 'token-plan-key',
+      baseUrl: 'https://token-plan.test',
+      model: model as HappyHorseModel,
+      concurrency: 3,
+      pollIntervalMs: 0,
+      pollMaxRetries: 2
+    }
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/services/aigc/video-generation/video-synthesis')) {
+        expect((init?.headers as Record<string, string>)['X-DashScope-Async']).toBe('enable')
+        const requestBody = JSON.parse(String(init?.body))
+        expect(requestBody.model).toBe(model)
+        expect(requestBody.parameters).toMatchObject({ resolution: '720P', duration: 7, watermark: false })
+        expect(Boolean(requestBody.parameters.ratio)).toBe(hasRatio)
+        expect(requestBody.input.media?.[0]?.type).toBe(mediaType)
+        if (mediaType) expect(requestBody.input.media[0].url).toMatch(/^data:image\/png;base64,/)
+        if (model === 'happyhorse-1.1-r2v') expect(requestBody.input.prompt).toContain('[Image 1]')
+        return jsonResponse({ output: { task_id: 'task-1', task_status: 'PENDING' } })
+      }
+      if (url.endsWith('/api/v1/tasks/task-1')) {
+        return jsonResponse({ output: { task_status: 'SUCCEEDED', video_url: 'https://cdn.test/happyhorse.mp4' } })
+      }
+      if (url === 'https://cdn.test/happyhorse.mp4') return new Response('happyhorse-video')
+      throw new Error(`unexpected URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const provider = new HappyHorseProvider(happyHorseConfig)
+    const result = await provider.generateClips(
+      [shots[0]],
+      model === 'happyhorse-1.1-t2v' ? [] : [imagePath],
+      dir,
+      options
+    )
+
+    expect(result.success).toBe(true)
+    if (!result.success) return
+    expect(await readFile(result.clips[0].clipPath, 'utf8')).toBe('happyhorse-video')
   })
 })

@@ -33,8 +33,8 @@ describe('image generation failure', () => {
     await request(app).post(`/api/projects/${created.body.id}/generate-story`).expect(200)
 
     const response = await request(app)
-      .post(`/api/projects/${created.body.id}/generate-video`)
-      .send({ provider: 'local_ffmpeg' })
+      .post(`/api/projects/${created.body.id}/generate-images`)
+      .send({ model: 'wan2.7-image-pro' })
       .expect(502)
 
     expect(response.body.message).toContain('镜头生图失败')

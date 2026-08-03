@@ -4,11 +4,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { createProjectStore } from './services/projectStore'
 import { generateStoryPackage, upgradeShotVideoPrompt } from './services/storyGenerator'
+import { generateStoryPackageWithModel } from './services/storyModelProvider'
 import { exportProjectJson, exportProjectMarkdown } from './services/exporters'
 import { createVideoProvider } from './services/videoProviders'
 import { createVideoGenProvider } from './services/videoGenProviders'
 import { createImageProvider } from './services/imageProviders'
-import { resolveFfmpegPath } from './config'
+import { imageGenConfig, resolveFfmpegPath } from './config'
 import { canReuseVideoClip, createVideoClipMetadata } from './services/videoClipMetadata'
 import {
   getVideoProviderDescriptor,
@@ -17,6 +18,8 @@ import {
 } from './services/videoProviderRegistry'
 import {
   defaultVideoGenerationOptions,
+  ImageGenerationModelSchema,
+  TextGenerationModelSchema,
   VideoGenerationOptionsSchema,
   VideoGenerationProviderNameSchema,
   type Project,
@@ -94,9 +97,59 @@ export function createRoutes(dataDir: string) {
     try {
       const project = await store.getProject(req.params.id)
       if (!project) return res.status(404).json({ message: '项目不存在' })
-      const storyPackage = generateStoryPackage({ sourceText: project.sourceText, style: project.style })
+      const input = { sourceText: project.sourceText, style: project.style }
+      const requestedModel = req.body?.model
+      const storyPackage = requestedModel
+        ? await generateStoryPackageWithModel(input, TextGenerationModelSchema.parse(requestedModel))
+        : generateStoryPackage(input)
       const updated = await store.saveProject({ ...project, storyPackage, updatedAt: new Date().toISOString() })
       res.json(updated)
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  router.post('/projects/:id/generate-images', async (req, res, next) => {
+    try {
+      const project = await store.getProject(req.params.id)
+      if (!project) return res.status(404).json({ message: '项目不存在' })
+      const shots = project.storyPackage?.shots ?? []
+      if (shots.length === 0) return res.status(400).json({ message: '请先生成分镜' })
+
+      const imageModel = ImageGenerationModelSchema.parse(req.body?.model ?? imageGenConfig.model)
+      const imageProvider = createImageProvider({ ...imageGenConfig, model: imageModel })
+      if (!imageProvider) {
+        return res.status(400).json({ message: '未配置图片生成 API Key' })
+      }
+
+      const outputDir = join(dataDir, 'outputs', project.id)
+      try {
+        const imagePaths = imageProvider.generateImages
+          ? await imageProvider.generateImages(shots, outputDir)
+          : await Promise.all(shots.map((shot) => imageProvider.generateImage(shot, outputDir)))
+        const updatedShots = shots.map((shot, index) => ({
+          ...shot,
+          status: 'pending' as const,
+          assetPath: imagePaths[index],
+          videoClipPath: undefined,
+          videoClipMetadata: undefined,
+          errorMessage: undefined
+        }))
+        const updated = await store.saveProject(mergeGeneratedShots(project, updatedShots))
+        return res.json(updated)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '图片生成失败'
+        const failedShots = shots.map((shot) => ({
+          ...shot,
+          status: 'failed' as const,
+          assetPath: undefined,
+          videoClipPath: undefined,
+          videoClipMetadata: undefined,
+          errorMessage: message
+        }))
+        await store.saveProject(mergeGeneratedShots(project, failedShots))
+        return res.status(502).json({ message: `镜头生图失败：${message}` })
+      }
     } catch (error) {
       next(error)
     }
@@ -155,7 +208,7 @@ export function createRoutes(dataDir: string) {
         return res.json(result)
       }
 
-      if (providerDescriptor.capabilities.imageToVideo) {
+      if (providerDescriptor.capabilities.aiVideo) {
         const requestedShots = shotId
           ? shots.filter((shot) => shot.id === shotId)
           : body.retryFailedOnly
@@ -169,49 +222,20 @@ export function createRoutes(dataDir: string) {
         let workingShots = shots.map((shot) => requestedIds.has(shot.id)
           ? upgradeShotVideoPrompt(shot)
           : shot)
-        const missingImageShots = workingShots.filter((shot) =>
-          requestedIds.has(shot.id) && (!shot.assetPath || !existsSync(shot.assetPath)))
+        const missingImageShots = providerDescriptor.capabilities.imageToVideo
+          ? workingShots.filter((shot) =>
+              requestedIds.has(shot.id) && (!shot.assetPath || !existsSync(shot.assetPath)))
+          : []
 
         if (missingImageShots.length > 0) {
-          const imageProvider = createImageProvider()
-          if (!imageProvider) {
-            return res.status(400).json({ message: '未配置图片生成 API Key，无法生成镜头画面' })
-          }
-          try {
-            const imagePaths = imageProvider.generateImages
-              ? await imageProvider.generateImages(missingImageShots, outputDir)
-              : await Promise.all(missingImageShots.map((shot) => imageProvider.generateImage(shot, outputDir)))
-            const imagePathById = new Map(missingImageShots.map((shot, index) => [shot.id, imagePaths[index]]))
-            workingShots = shots.map((shot) => {
-              const upgraded = requestedIds.has(shot.id) ? upgradeShotVideoPrompt(shot) : shot
-              const imagePath = imagePathById.get(shot.id)
-              return imagePath
-                ? {
-                    ...upgraded,
-                    assetPath: imagePath,
-                    videoClipPath: undefined,
-                    videoClipMetadata: undefined,
-                    errorMessage: undefined
-                  }
-                : upgraded
-            })
-          } catch (error) {
-            const message = error instanceof Error ? error.message : '图片生成失败'
-            const missingIds = new Set(missingImageShots.map((shot) => shot.id))
-            const failedShots = shots.map((shot) => missingIds.has(shot.id)
-              ? { ...shot, status: 'failed' as const, assetPath: undefined, errorMessage: message }
-              : shot
-            )
-            await store.saveProject(mergeGeneratedShots(project, failedShots))
-            return res.status(502).json({
-              message: `镜头生图失败：${message}`,
-              errors: missingImageShots.map((shot) => ({ shotId: shot.id, message }))
-            })
-          }
+          return res.status(400).json({
+            message: `请先生成分镜图片，仍有 ${missingImageShots.length} 个镜头缺少图片`,
+            missingShotIds: missingImageShots.map((shot) => shot.id)
+          })
         }
 
         const targetWorkingShots = workingShots.filter((shot) => requestedIds.has(shot.id))
-        const imageInputs = targetWorkingShots.map((shot) => shot.assetPath!)
+        const imageInputs = targetWorkingShots.map((shot) => shot.assetPath ?? '')
         const videoGenProvider = createVideoGenProvider(providerName)
         const expectedMetadata = await Promise.all(targetWorkingShots.map((shot, index) =>
           createVideoClipMetadata(
@@ -224,7 +248,7 @@ export function createRoutes(dataDir: string) {
         const metadataById = new Map(targetWorkingShots.map((shot, index) => [shot.id, expectedMetadata[index]]))
         const generationShots = targetWorkingShots.filter((shot, index) =>
           !canReuseVideoClip(shot, expectedMetadata[index]))
-        const generationImages = generationShots.map((shot) => shot.assetPath!)
+        const generationImages = generationShots.map((shot) => shot.assetPath ?? '')
         const clipResult = generationShots.length > 0
           ? await videoGenProvider.generateClips(
               generationShots,
@@ -314,50 +338,19 @@ export function createRoutes(dataDir: string) {
         return res.json({ ...result, provider: providerName, completed, failures: [] })
       }
 
-      // local_ffmpeg：先生图（如已配置），再合成视频
-      const imageProvider = createImageProvider()
-      if (!imageProvider) {
-        return res.status(400).json({ message: '未配置图片生成 API Key，无法生成镜头画面' })
-      }
-
-      const imageShots: typeof shots = []
-      const targetImageShots = shotId ? shots.filter((shot) => shot.id === shotId) : shots
-      try {
-        const imagePaths = imageProvider.generateImages
-          ? await imageProvider.generateImages(targetImageShots, outputDir)
-          : await Promise.all(targetImageShots.map((shot) => imageProvider.generateImage(shot, outputDir)))
-        const imagePathById = new Map(targetImageShots.map((shot, index) => [shot.id, imagePaths[index]]))
-        imageShots.push(...shots.map((shot) => {
-          const imagePath = imagePathById.get(shot.id)
-          return imagePath
-            ? {
-                ...shot,
-                status: 'ready' as const,
-                assetPath: imagePath,
-                videoClipPath: undefined,
-                videoClipMetadata: undefined,
-                errorMessage: undefined
-              }
-            : shot
-        }))
-      } catch (error) {
-        const message = error instanceof Error ? error.message : '图片生成失败'
-        const targetIds = new Set(targetImageShots.map((shot) => shot.id))
-        imageShots.push(...shots.map((shot) => targetIds.has(shot.id)
-          ? { ...shot, status: 'failed' as const, assetPath: undefined, errorMessage: message }
-          : shot
-        ))
-        await store.saveProject(mergeGeneratedShots(project, imageShots))
-        return res.status(502).json({
-          message: `镜头生图失败：${message}`,
-          errors: targetImageShots.map((shot) => ({ shotId: shot.id, message }))
+      const targetVideoShots = shotId ? shots.filter((shot) => shot.id === shotId) : shots
+      const missingImageShots = targetVideoShots.filter((shot) => !shot.assetPath || !existsSync(shot.assetPath))
+      if (missingImageShots.length > 0) {
+        return res.status(400).json({
+          message: `请先生成分镜图片，仍有 ${missingImageShots.length} 个镜头缺少图片`,
+          missingShotIds: missingImageShots.map((shot) => shot.id)
         })
       }
 
       const videoProvider = createVideoProvider('local_ffmpeg', outputDir, ffmpegPath)
       const syntheticProject = {
         ...project,
-        storyPackage: project.storyPackage && { ...project.storyPackage, shots: imageShots },
+        storyPackage: project.storyPackage && { ...project.storyPackage, shots },
       }
       const result = await videoProvider.generate({
         project: syntheticProject,

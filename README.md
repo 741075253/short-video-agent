@@ -1,6 +1,6 @@
 # 短视频智能体
 
-本地 Web 工具：小说文本 → 动画短剧分镜脚本包 → Mock / FFmpeg 视频生成流程。
+本地 Web 工具：小说文本 → AI 动画分镜 → 万相关键帧 → HappyHorse 动态片段 → FFmpeg 成片。
 
 ## 启动
 
@@ -26,7 +26,18 @@ pnpm web
 
 前端地址：`http://127.0.0.1:5173`
 
-## 第一版能力
+## Token Plan
+
+在 `.env` 中配置 Token Plan 个人版密钥：
+
+```dotenv
+TOKEN_PLAN_API_KEY=sk-sp-xxx
+TOKEN_PLAN_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com
+```
+
+为兼容已有配置，也支持使用 `qian_wen_api_key` 保存同一密钥。页面可选择套餐内的文本、万相图片和 HappyHorse 视频模型。
+
+## 能力
 
 - 输入小说文本
 - 生成摘要、角色、场景、分镜、提示词、字幕
@@ -34,8 +45,12 @@ pnpm web
 - 保存项目到本地 JSON 文件
 - 重新打开项目
 - 导出 JSON / Markdown
-- 使用 MockProvider 跑通视频生成流程
-- 使用 LocalFfmpegProvider 检查 FFmpeg 并生成本地合成计划
+- 使用 Token Plan 文本模型生成结构化分镜
+- 使用 Wan 2.7 生成连续关键帧
+- 使用 HappyHorse 1.1 生成 T2V / I2V / R2V 视频片段
+- 使用 FFmpeg 叠加字幕并合成整片
+
+页面生成流程分为“生成分镜”“生成分镜图片”“生成视频”三个独立操作。I2V、R2V 和本地 FFmpeg 缺少分镜图片时不会自动生图。
 
 ## FFmpeg
 

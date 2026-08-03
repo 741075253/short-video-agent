@@ -80,7 +80,8 @@ afterEach(async () => {
 })
 
 async function projectWithStory(
-  sourceText = '少年林川推开木门，看见远处城市燃烧。'
+  sourceText = '少年林川推开木门，看见远处城市燃烧。',
+  withImages = true
 ) {
   dir = await mkdtemp(join(tmpdir(), 'short-video-agent-kling-route-'))
   const app = createApp({ dataDir: dir })
@@ -89,6 +90,12 @@ async function projectWithStory(
     .send({ name: 'Kling 测试', sourceText })
     .expect(201)
   await request(app).post(`/api/projects/${created.body.id}/generate-story`).expect(200)
+  if (withImages) {
+    await request(app)
+      .post(`/api/projects/${created.body.id}/generate-images`)
+      .send({ model: 'wan2.7-image-pro' })
+      .expect(200)
+  }
   return { app, id: created.body.id as string }
 }
 
@@ -98,16 +105,17 @@ describe('Kling video route', () => {
     const response = await request(app).get('/api/video-providers').expect(200)
 
     expect(response.body[0]).toMatchObject({
-      id: 'kling',
+      id: 'happyhorse_i2v',
       capabilities: {
         duration: { min: 3, max: 15, default: 5 },
         resolutions: ['720p', '1080p'],
-        nativeAudio: true
+        aiVideo: true,
+        imageToVideo: true
       }
     })
   })
 
-  it('generates missing images, persists clip paths, and renders the final video', async () => {
+  it('uses generated images, persists clip paths, and renders the final video', async () => {
     const { app, id } = await projectWithStory()
 
     await request(app)
@@ -140,6 +148,19 @@ describe('Kling video route', () => {
     })
     expect(persisted.body.storyPackage.shots[0].assetPath).toMatch(/shot-1\.png$/)
     expect(persisted.body.storyPackage.shots[0].videoClipPath).toMatch(/shot-1-clip\.mp4$/)
+  })
+
+  it('requires image generation before image-to-video generation', async () => {
+    const { app, id } = await projectWithStory(undefined, false)
+
+    const response = await request(app)
+      .post(`/api/projects/${id}/generate-video`)
+      .send({ provider: 'kling' })
+      .expect(400)
+
+    expect(response.body.message).toContain('请先生成分镜图片')
+    expect(mocks.generateImages).not.toHaveBeenCalled()
+    expect(mocks.generateClips).not.toHaveBeenCalled()
   })
 
   it('reuses a matching successful clip without another Kling request', async () => {

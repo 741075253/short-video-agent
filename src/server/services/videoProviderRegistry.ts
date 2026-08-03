@@ -6,6 +6,45 @@ import {
 } from '../../shared/schema'
 
 const descriptors: Record<VideoGenerationProviderName, VideoProviderDescriptor> = {
+  happyhorse_i2v: {
+    id: 'happyhorse_i2v',
+    label: 'HappyHorse 1.1 图生视频',
+    capabilities: {
+      duration: { min: 3, max: 15, default: defaultVideoGenerationOptions.durationSeconds },
+      resolutions: ['720p', '1080p'],
+      defaultResolution: defaultVideoGenerationOptions.resolution,
+      nativeAudio: false,
+      aiVideo: true,
+      imageToVideo: true,
+      staticFallback: false
+    }
+  },
+  happyhorse_t2v: {
+    id: 'happyhorse_t2v',
+    label: 'HappyHorse 1.1 文生视频',
+    capabilities: {
+      duration: { min: 3, max: 15, default: defaultVideoGenerationOptions.durationSeconds },
+      resolutions: ['720p', '1080p'],
+      defaultResolution: defaultVideoGenerationOptions.resolution,
+      nativeAudio: false,
+      aiVideo: true,
+      imageToVideo: false,
+      staticFallback: false
+    }
+  },
+  happyhorse_r2v: {
+    id: 'happyhorse_r2v',
+    label: 'HappyHorse 1.1 参考生视频',
+    capabilities: {
+      duration: { min: 3, max: 15, default: defaultVideoGenerationOptions.durationSeconds },
+      resolutions: ['720p', '1080p'],
+      defaultResolution: defaultVideoGenerationOptions.resolution,
+      nativeAudio: false,
+      aiVideo: true,
+      imageToVideo: true,
+      staticFallback: false
+    }
+  },
   kling: {
     id: 'kling',
     label: 'Kling 3.0 Turbo',
@@ -14,6 +53,7 @@ const descriptors: Record<VideoGenerationProviderName, VideoProviderDescriptor> 
       resolutions: ['720p', '1080p'],
       defaultResolution: defaultVideoGenerationOptions.resolution,
       nativeAudio: true,
+      aiVideo: true,
       imageToVideo: true,
       staticFallback: false
     }
@@ -23,6 +63,7 @@ const descriptors: Record<VideoGenerationProviderName, VideoProviderDescriptor> 
     label: '本地 FFmpeg（静态降级）',
     capabilities: {
       nativeAudio: false,
+      aiVideo: false,
       imageToVideo: false,
       staticFallback: true
     }
@@ -32,6 +73,7 @@ const descriptors: Record<VideoGenerationProviderName, VideoProviderDescriptor> 
     label: 'Mock',
     capabilities: {
       nativeAudio: false,
+      aiVideo: false,
       imageToVideo: false,
       staticFallback: true
     }
@@ -39,7 +81,12 @@ const descriptors: Record<VideoGenerationProviderName, VideoProviderDescriptor> 
 }
 
 export function listVideoProviderDescriptors(): VideoProviderDescriptor[] {
-  return [descriptors.kling, descriptors.local_ffmpeg]
+  return [
+    descriptors.happyhorse_i2v,
+    descriptors.happyhorse_r2v,
+    descriptors.happyhorse_t2v,
+    descriptors.local_ffmpeg
+  ]
 }
 
 export function getVideoProviderDescriptor(name: VideoGenerationProviderName): VideoProviderDescriptor {
