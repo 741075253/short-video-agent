@@ -118,6 +118,7 @@ select:focus-visible {
 
 .status-running,
 .status-queued,
+.status-waiting_step_review,
 .status-cancel_requested {
   border-color: var(--yellow);
   color: #f4d784;
@@ -421,7 +422,8 @@ button:disabled {
 }
 
 .timelineSection,
-.approvalSection {
+.approvalSection,
+.resultsSection {
   padding: 22px 0;
   border-bottom: 1px solid var(--line);
 }
@@ -496,6 +498,220 @@ button:disabled {
   border-color: var(--yellow);
   box-shadow: 0 0 0 4px rgba(214, 169, 59, 0.18);
   color: #765812;
+}
+
+.resultsHeading h2 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.resultsHeading svg {
+  color: var(--green);
+}
+
+.resultStack {
+  border-top: 1px solid var(--line);
+}
+
+.resultBlock {
+  border-bottom: 1px solid var(--line);
+}
+
+.resultBlock summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  gap: 12px;
+  padding: 0 4px;
+  cursor: pointer;
+  color: #343a36;
+  font-size: 13px;
+  font-weight: 700;
+  list-style: none;
+}
+
+.resultBlock summary::-webkit-details-marker {
+  display: none;
+}
+
+.resultBlock summary::after {
+  flex: none;
+  color: var(--muted);
+  content: '+';
+  font: 16px Consolas, monospace;
+}
+
+.resultBlock[open] summary::after {
+  content: '−';
+}
+
+.resultBlock summary small {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.resultBody {
+  padding: 2px 4px 18px;
+  color: #3b423e;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.resultLead {
+  max-width: 88ch;
+  margin-bottom: 16px;
+  color: #252a27;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.resultGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 22px;
+}
+
+.resultGridFour {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+}
+
+.resultGroup {
+  min-width: 0;
+  margin: 0 0 14px;
+}
+
+.resultGroup h3,
+.resultDatum > span {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.resultGroup p,
+.resultDatum p,
+.resultRecord p,
+.numberedResults p {
+  margin: 0;
+}
+
+.resultGroup ul,
+.resultGroup ol {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.resultGroup li small,
+.numberedResults small,
+.resultRecord > small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resultRecords {
+  display: grid;
+  gap: 14px;
+}
+
+.resultRecord {
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 3px solid #a7b9ad;
+}
+
+.resultRecordTitle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 5px;
+}
+
+.resultRecordTitle code {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resultInlineData {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 9px 0 0;
+}
+
+.resultInlineData dt {
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.resultInlineData dd {
+  margin: 0;
+}
+
+.numberedResults {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.numberedResults > li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.numberedResults > li > span {
+  color: var(--green);
+  font: 15px Consolas, monospace;
+}
+
+.shotResults {
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.assetResults {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.assetResults li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #e2e5e2;
+}
+
+.assetStatus {
+  flex: none;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.asset-ready {
+  color: var(--green);
+}
+
+.asset-failed {
+  color: var(--red);
 }
 
 .characterGrid {
@@ -601,6 +817,12 @@ button:disabled {
   border-color: #d9bd77;
   background: #fffaf0;
   color: #765812;
+}
+
+.stepBand {
+  border-color: #8faf9c;
+  background: #f5faf7;
+  color: var(--green-dark);
 }
 
 .successBand {
@@ -790,7 +1012,11 @@ button:disabled {
   .configBand,
   .shotFields,
   .approvalActions,
-  .runMetrics {
+  .runMetrics,
+  .resultGrid,
+  .resultGridFour,
+  .resultInlineData,
+  .assetResults {
     grid-template-columns: 1fr;
   }
 

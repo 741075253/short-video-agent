@@ -4,6 +4,16 @@ import { CheckpointService } from '../persistence/persistence.service'
 import { AgentNodesService } from './agent-nodes.service'
 import { WorkflowAnnotation, type GraphState } from './workflow-state'
 
+export const manualReviewNodes = [
+  'story_analyzer',
+  'director',
+  'character',
+  'plot',
+  'scene',
+  'production',
+  'editing'
+] as const
+
 @Injectable()
 export class WorkflowGraphService {
   readonly graph
@@ -78,6 +88,6 @@ export class WorkflowGraphService {
         editing: 'editing',
         end: END
       })
-      .compile({ checkpointer: checkpoints.saver })
+      .compile({ checkpointer: checkpoints.saver, interruptAfter: [...manualReviewNodes] })
   }
 }

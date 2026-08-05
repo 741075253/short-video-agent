@@ -159,6 +159,7 @@ export type WorkflowState = z.infer<typeof WorkflowStateSchema>
 export const RunStatusSchema = z.enum([
   'queued',
   'running',
+  'waiting_step_review',
   'waiting_character_approval',
   'waiting_storyboard_approval',
   'waiting_budget_approval',

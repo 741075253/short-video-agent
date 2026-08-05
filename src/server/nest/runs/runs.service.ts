@@ -125,7 +125,10 @@ export class RunsService {
     if (run.cancelRequested) throw new Error('任务已请求取消')
     await this.runs.update(id, { status: 'queued', interrupt: null, error: null })
     this.events.emit(id, 'run.queued', { resumed: true })
-    setImmediate(() => void this.execute(id, new Command({ resume: input })))
+    const executionInput = run.status === 'waiting_step_review'
+      ? null
+      : new Command({ resume: input })
+    setImmediate(() => void this.execute(id, executionInput))
     return this.get(id)
   }
 
@@ -234,7 +237,7 @@ export class RunsService {
     }
   }
 
-  private async execute(id: string, input: WorkflowState | Command<ResumeRunInput>): Promise<void> {
+  private async execute(id: string, input: WorkflowState | Command<ResumeRunInput> | null): Promise<void> {
     if (this.activeRuns.has(id)) return
     this.activeRuns.add(id)
     try {
@@ -245,12 +248,15 @@ export class RunsService {
       const config = {
         configurable: { thread_id: run.threadId },
         recursionLimit: 100,
-        streamMode: 'values' as const
+        streamMode: 'values' as const,
+        durability: 'sync' as const
       }
       const stream = await this.workflow.graph.stream(input as never, config)
+      let latestState: WorkflowState | undefined
       for await (const value of stream) {
+        const state = WorkflowStateSchema.parse(value)
+        latestState = state
         const snapshot = await this.workflow.graph.getState(config)
-        const state = WorkflowStateSchema.parse(snapshot.values)
         const currentNode = snapshot.next[0] ?? null
         await this.runs.update(id, {
           state,
@@ -273,7 +279,9 @@ export class RunsService {
       }
 
       const snapshot = await this.workflow.graph.getState(config)
-      const state = WorkflowStateSchema.parse(snapshot.values)
+      const snapshotState = WorkflowStateSchema.safeParse(snapshot.values)
+      const state = snapshotState.success ? snapshotState.data : latestState
+      if (!state) throw snapshotState.error
       const interruptions = snapshot.tasks.flatMap((task) => task.interrupts ?? [])
       if (interruptions.length > 0) {
         const interruptValue = interruptions[0].value as Record<string, unknown> | undefined
@@ -286,6 +294,23 @@ export class RunsService {
           interrupt: (interruptValue ?? null) as never
         })
         this.events.emit(id, 'run.interrupted', { status, interrupt: interruptValue ?? {} })
+        return
+      }
+      if (snapshot.next.length > 0) {
+        const nextNode = snapshot.next[0]
+        const interruptValue = {
+          type: 'step_review',
+          completedNode: this.completedNode(snapshot.metadata),
+          nextNode
+        }
+        await this.runs.update(id, {
+          status: 'waiting_step_review',
+          state,
+          budget: state.usageBudget,
+          currentNode: nextNode,
+          interrupt: interruptValue as never
+        })
+        this.events.emit(id, 'run.interrupted', { status: 'waiting_step_review', interrupt: interruptValue })
         return
       }
       await this.runs.update(id, {
@@ -312,6 +337,13 @@ export class RunsService {
     if (type === 'storyboard_approval') return 'waiting_storyboard_approval'
     if (type === 'budget_approval') return 'waiting_budget_approval'
     return 'waiting_human_review'
+  }
+
+  private completedNode(metadata: unknown): string | null {
+    if (!metadata || typeof metadata !== 'object' || !('writes' in metadata)) return null
+    const writes = (metadata as { writes?: unknown }).writes
+    if (!writes || typeof writes !== 'object' || Array.isArray(writes)) return null
+    return Object.keys(writes)[0] ?? null
   }
 
   private async getRecord(id: string): Promise<WorkflowRunRecord> {

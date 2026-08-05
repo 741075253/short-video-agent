@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronRight,
   CircleStop,
   Clock3,
   Download,
+  FileText,
   Film,
   FolderOpen,
   History,
   Play,
+  Plus,
   RefreshCw,
   Save,
   Sparkles,
+  StepForward,
   X
 } from 'lucide-react'
 import {
@@ -21,7 +24,7 @@ import {
   type Project,
   type StoryPackage
 } from '../shared/schema'
-import type { ArtifactVersion, Episode, RunStatus, WorkflowRun } from '../shared/workflow'
+import type { ArtifactVersion, Episode, RunStatus, WorkflowRun, WorkflowState } from '../shared/workflow'
 import { api } from './api'
 
 const terminalStatuses: RunStatus[] = ['completed', 'failed', 'cancelled']
@@ -29,6 +32,7 @@ const terminalStatuses: RunStatus[] = ['completed', 'failed', 'cancelled']
 const statusLabels: Record<RunStatus, string> = {
   queued: '等待执行',
   running: '正在执行',
+  waiting_step_review: '等待继续',
   waiting_character_approval: '确认角色',
   waiting_storyboard_approval: '确认分镜',
   waiting_budget_approval: '确认预算',
@@ -51,6 +55,14 @@ const workflowStages = [
   { id: 'editing', label: '剪辑合成', ready: (run: WorkflowRun) => Boolean(run.state?.editResult) },
   { id: 'reviewer', label: '成片审核', ready: (run: WorkflowRun) => run.status === 'completed' }
 ]
+
+const workflowNodeLabels: Record<string, string> = Object.fromEntries(
+  workflowStages.map((stage) => [stage.id, stage.label])
+)
+workflowNodeLabels.character_approval = '确认角色参考图'
+workflowNodeLabels.storyboard_approval = '确认分镜'
+workflowNodeLabels.director_review = '导演复核'
+workflowNodeLabels.human_review = '人工审核'
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -130,6 +142,8 @@ export function App() {
 
   async function openProject(project: Project) {
     setCurrent(project)
+    setName(project.name)
+    setSourceText(project.sourceText)
     setConfig(project.productionConfig ?? { ...defaultProductionConfig })
     setFeedback('')
     setDraftStoryboard(null)
@@ -157,7 +171,7 @@ export function App() {
     if (!current) return
     setBusy(true)
     try {
-      const saved = await api.saveProject({ ...current, productionConfig: config })
+      const saved = await api.saveProject({ ...current, name, sourceText, productionConfig: config })
       setCurrent(saved)
       await refreshProjects()
       setMessage('项目已保存')
@@ -170,7 +184,7 @@ export function App() {
     if (!current) return
     setBusy(true)
     try {
-      const saved = await api.saveProject({ ...current, productionConfig: config })
+      const saved = await api.saveProject({ ...current, name, sourceText, productionConfig: config })
       setCurrent(saved)
       const projectEpisodes = await api.listEpisodes(saved.id)
       setEpisodes(projectEpisodes)
@@ -191,6 +205,7 @@ export function App() {
     if (!run) return
     setBusy(true)
     try {
+      const reviewingStep = run.status === 'waiting_step_review'
       await api.resumeRun(run.id, {
         approved,
         feedback: feedback || undefined,
@@ -199,7 +214,7 @@ export function App() {
       setFeedback('')
       setDraftStoryboard(null)
       await refreshRun(run.id)
-      setMessage(approved ? '已确认，流程继续执行' : '已提交返工意见')
+      setMessage(reviewingStep ? '已开始执行下一步' : approved ? '已确认，流程继续执行' : '已提交返工意见')
     } finally {
       setBusy(false)
     }
@@ -247,6 +262,25 @@ export function App() {
     setDraftStoryboard({ ...draftStoryboard, shots })
   }
 
+  function beginNewProject() {
+    setCurrent(null)
+    setRun(null)
+    setArtifacts([])
+    setEpisodes([])
+    setSelectedEpisodeId('')
+    setName('我的短剧')
+    setSourceText('')
+    setConfig({ ...defaultProductionConfig, ...modelCatalog?.defaults })
+    setFeedback('')
+    setDraftStoryboard(null)
+    setMessage('')
+  }
+
+  const completedNode = typeof run?.interrupt?.completedNode === 'string'
+    ? run.interrupt.completedNode
+    : [...workflowStages].reverse().find((stage) => run && stage.ready(run))?.id
+  const nextNode = typeof run?.interrupt?.nextNode === 'string' ? run.interrupt.nextNode : run?.currentNode
+
   return (
     <main className="studio">
       <header className="topbar">
@@ -263,18 +297,31 @@ export function App() {
       <div className="studioGrid">
         <aside className="projectRail">
           <section className="newProject">
-            <h2>新项目</h2>
+            <div className="sectionTitle">
+              <h2>{current ? '项目内容' : '新项目'}</h2>
+              {current && (
+                <button className="iconButton" title="新建项目" onClick={beginNewProject}>
+                  <Plus size={16} />
+                </button>
+              )}
+            </div>
             <label>
               名称
-              <input value={name} onChange={(event) => setName(event.target.value)} />
+              <input disabled={Boolean(active)} value={name} onChange={(event) => setName(event.target.value)} />
             </label>
             <label>
               故事内容
-              <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} rows={7} />
+              <textarea disabled={Boolean(active)} value={sourceText} onChange={(event) => setSourceText(event.target.value)} rows={7} />
             </label>
-            <button className="primaryButton" disabled={busy || sourceText.trim().length < 10} onClick={() => void createProject()}>
-              <Sparkles size={16} />创建项目
-            </button>
+            {current ? (
+              <button className="primaryButton" disabled={busy || Boolean(active) || sourceText.trim().length < 10} onClick={() => void saveProject()}>
+                <Save size={16} />保存内容
+              </button>
+            ) : (
+              <button className="primaryButton" disabled={busy || sourceText.trim().length < 10} onClick={() => void createProject()}>
+                <Sparkles size={16} />创建项目
+              </button>
+            )}
           </section>
 
           <nav className="projectList" aria-label="项目列表">
@@ -310,13 +357,13 @@ export function App() {
               <div className="projectHeader">
                 <div>
                   <span className="eyebrow">当前项目</span>
-                  <h1>{current.name}</h1>
+                  <h1>{name}</h1>
                 </div>
                 <div className="headerActions">
-                  <button className="secondaryButton" disabled={busy || Boolean(active)} onClick={() => void saveProject()}>
+                  <button className="secondaryButton" disabled={busy || Boolean(active) || sourceText.trim().length < 10} onClick={() => void saveProject()}>
                     <Save size={16} />保存
                   </button>
-                  <button className="primaryButton" disabled={busy || Boolean(active)} onClick={() => void startRun()}>
+                  <button className="primaryButton" disabled={busy || Boolean(active) || sourceText.trim().length < 10} onClick={() => void startRun()}>
                     <Play size={16} />启动制作
                   </button>
                 </div>
@@ -428,6 +475,21 @@ export function App() {
                   })}
                 </ol>
               </section>
+
+              {run?.state && <WorkflowResults state={run.state} activeNode={completedNode} />}
+
+              {run?.status === 'waiting_step_review' && (
+                <section className="decisionBand stepBand">
+                  <StepForward size={20} />
+                  <div>
+                    <strong>{completedNode ? `${workflowNodeLabels[completedNode] ?? completedNode}已生成` : '本步骤已完成'}</strong>
+                    <p>检查上方产物后，再决定是否执行下一步。未点击时不会调用后续模型。</p>
+                  </div>
+                  <button className="primaryButton" disabled={busy} onClick={() => void resume(true)}>
+                    <Play size={16} />执行下一步：{nextNode ? workflowNodeLabels[nextNode] ?? nextNode : '继续'}
+                  </button>
+                </section>
+              )}
 
               {run?.status === 'waiting_character_approval' && (
                 <section className="approvalSection">
@@ -542,6 +604,167 @@ export function App() {
       </div>
     </main>
   )
+}
+
+function WorkflowResults({ state, activeNode }: { state: WorkflowState; activeNode?: string | null }) {
+  const resultCount = [
+    state.storyAnalysis,
+    state.directorPlan,
+    state.characterBible,
+    state.plotOutline,
+    state.sceneBible,
+    state.storyboard,
+    state.generatedAssets,
+    state.editResult
+  ].filter(Boolean).length
+
+  if (resultCount === 0) return null
+
+  return (
+    <section className="resultsSection">
+      <div className="sectionTitle resultsHeading">
+        <h2><FileText size={16} />步骤产物</h2>
+        <span>{resultCount} 份</span>
+      </div>
+      <div className="resultStack">
+        {state.storyAnalysis && (
+          <ResultBlock id="story_analyzer" title="故事理解" activeNode={activeNode}>
+            <p className="resultLead">{state.storyAnalysis.summary}</p>
+            <div className="resultGrid">
+              <ResultGroup title="人物">
+                <ul>{state.storyAnalysis.characters.map((item) => <li key={item.name}><strong>{item.name}</strong>：{item.description}</li>)}</ul>
+              </ResultGroup>
+              <ResultGroup title="地点">
+                <p>{state.storyAnalysis.locations.join('、') || '无'}</p>
+              </ResultGroup>
+              <ResultGroup title="原文事实">
+                <ul>{state.storyAnalysis.facts.map((item, index) => <li key={`${item.sourceRange}-${index}`}>{item.text}<small>{item.sourceRange}</small></li>)}</ul>
+              </ResultGroup>
+              <ResultGroup title="事件顺序">
+                <ol>{state.storyAnalysis.events.map((item) => <li key={item.order}>{item.description}<small>{item.characterNames.join('、')}</small></li>)}</ol>
+              </ResultGroup>
+              <ResultGroup title="核心冲突">
+                <ul>{state.storyAnalysis.conflicts.map((item) => <li key={item}>{item}</li>)}</ul>
+              </ResultGroup>
+            </div>
+          </ResultBlock>
+        )}
+
+        {state.directorPlan && (
+          <ResultBlock id="director" title="导演规划" activeNode={activeNode}>
+            <div className="resultGrid resultGridFour">
+              <ResultDatum label="受众" value={state.directorPlan.audience} />
+              <ResultDatum label="基调" value={state.directorPlan.tone} />
+              <ResultDatum label="节奏" value={state.directorPlan.pacing} />
+              <ResultDatum label="视觉方向" value={state.directorPlan.visualDirection} />
+            </div>
+            <ResultGroup title="改编目标"><ul>{state.directorPlan.adaptationGoals.map((item) => <li key={item}>{item}</li>)}</ul></ResultGroup>
+            <ResultGroup title="分集计划">
+              <ol>{state.directorPlan.episodeSummaries.map((item) => <li key={item.episode}>第 {item.episode} 集：{item.summary}<small>{item.targetDurationSeconds} 秒</small></li>)}</ol>
+            </ResultGroup>
+          </ResultBlock>
+        )}
+
+        {state.characterBible && (
+          <ResultBlock id="character" title="角色设定" activeNode={activeNode} count={state.characterBible.characters.length}>
+            <div className="resultRecords">
+              {state.characterBible.characters.map((character) => (
+                <div className="resultRecord" key={character.id}>
+                  <div className="resultRecordTitle"><strong>{character.name}</strong><code>{character.id}</code></div>
+                  <p>{character.description}</p>
+                  <dl className="resultInlineData">
+                    <div><dt>外观</dt><dd>{character.appearance}</dd></div>
+                    <div><dt>性格</dt><dd>{character.personality}</dd></div>
+                    <div><dt>服装</dt><dd>{character.wardrobe}</dd></div>
+                  </dl>
+                </div>
+              ))}
+            </div>
+          </ResultBlock>
+        )}
+
+        {state.plotOutline && (
+          <ResultBlock id="plot" title="剧情拆分" activeNode={activeNode} count={state.plotOutline.beats.length}>
+            <p className="resultLead">{state.plotOutline.premise}</p>
+            <ol className="numberedResults">
+              {state.plotOutline.beats.map((beat) => (
+                <li key={beat.id}><span>{String(beat.order).padStart(2, '0')}</span><div><strong>{beat.title}</strong><p>{beat.description}</p><small>{beat.dramaticPurpose}</small></div></li>
+              ))}
+            </ol>
+            <div className="resultGrid">
+              <ResultDatum label="高潮" value={state.plotOutline.climax} />
+              <ResultDatum label="结局" value={state.plotOutline.ending} />
+            </div>
+          </ResultBlock>
+        )}
+
+        {state.sceneBible && (
+          <ResultBlock id="scene" title="场景设计" activeNode={activeNode} count={state.sceneBible.scenes.length}>
+            <ResultGroup title="世界规则"><ul>{state.sceneBible.worldRules.map((item) => <li key={item}>{item}</li>)}</ul></ResultGroup>
+            <div className="resultRecords">
+              {state.sceneBible.scenes.map((scene) => (
+                <div className="resultRecord" key={scene.id}>
+                  <div className="resultRecordTitle"><strong>{scene.name}</strong><code>{scene.id}</code></div>
+                  <p>{scene.description}</p>
+                  <small>{scene.time} · {scene.lighting}</small>
+                </div>
+              ))}
+            </div>
+          </ResultBlock>
+        )}
+
+        {state.storyboard && (
+          <ResultBlock id="storyboard_agent" title="分镜" activeNode={activeNode} count={state.storyboard.shots.length}>
+            <p className="resultLead">{state.storyboard.summary}</p>
+            <ol className="numberedResults shotResults">
+              {state.storyboard.shots.map((shot) => (
+                <li key={shot.id}><span>{String(shot.index).padStart(2, '0')}</span><div><strong>{shot.visual}</strong><p>{shot.action}</p><small>{shot.camera} · {shot.durationSeconds} 秒 · 字幕：{shot.subtitle || '无'}</small></div></li>
+              ))}
+            </ol>
+          </ResultBlock>
+        )}
+
+        {state.generatedAssets && (
+          <ResultBlock id="production" title="视频制作" activeNode={activeNode} count={state.generatedAssets.shots.length}>
+            <ul className="assetResults">
+              {state.generatedAssets.shots.map((shot) => (
+                <li key={shot.id}><span>镜头 {String(shot.index).padStart(2, '0')}</span><strong className={`assetStatus asset-${shot.status}`}>{shot.status === 'ready' ? '已完成' : shot.status === 'failed' ? '失败' : shot.status === 'generating' ? '生成中' : '待生成'}</strong></li>
+              ))}
+            </ul>
+          </ResultBlock>
+        )}
+
+        {state.editResult && (
+          <ResultBlock id="editing" title="剪辑合成" activeNode={activeNode}>
+            <ResultDatum label="成片文件" value={state.editResult.outputPath} />
+          </ResultBlock>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function ResultBlock(props: {
+  id: string
+  title: string
+  activeNode?: string | null
+  count?: number
+  children: ReactNode
+}) {
+  return (
+    <details className="resultBlock" open={props.activeNode === props.id}>
+      <summary><span>{props.title}</span>{props.count !== undefined && <small>{props.count} 项</small>}</summary>
+      <div className="resultBody">{props.children}</div>
+    </details>
+  )
+}
+
+function ResultGroup({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="resultGroup"><h3>{title}</h3>{children}</section>
+}
+
+function ResultDatum({ label, value }: { label: string; value: string }) {
+  return <div className="resultDatum"><span>{label}</span><p>{value}</p></div>
 }
 
 function ApprovalActions(props: {

@@ -8,6 +8,7 @@ type CompletionOptions<T> = {
   system: string
   user: string
   schema: z.ZodType<T>
+  outputSchema?: z.ZodType
   temperature?: number
   maxTokens?: number
 }
@@ -46,6 +47,12 @@ export class ModelGateway {
     this.ensureConfigured(options.model)
     const model = resolveTextModel(options.model)
     const startedAt = Date.now()
+    let schemaInstruction = ''
+    try {
+      schemaInstruction = `输出必须满足以下 JSON Schema：${JSON.stringify(z.toJSONSchema(options.outputSchema ?? options.schema))}`
+    } catch {
+      // Some effect schemas cannot be represented as JSON Schema; the Zod parser remains authoritative.
+    }
     const response = await fetch(`${model.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -55,7 +62,7 @@ export class ModelGateway {
       body: JSON.stringify({
         model: model.model,
         messages: [
-          { role: 'system', content: options.system },
+          { role: 'system', content: [options.system, schemaInstruction].filter(Boolean).join('\n') },
           { role: 'user', content: options.user }
         ],
         response_format: { type: 'json_object' },
