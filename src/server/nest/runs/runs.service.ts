@@ -33,6 +33,10 @@ type PublicRun = Omit<WorkflowRunRecord, 'createdAt' | 'updatedAt' | 'completedA
   completedAt: string | null
 }
 
+type ExecutionInput = WorkflowState | Command | null
+
+const workflowStateKeys = new Set<string>(WorkflowStateSchema.keyof().options)
+
 @Injectable()
 export class RunsService {
   private readonly runs: Repository<WorkflowRunRecord>
@@ -121,13 +125,18 @@ export class RunsService {
   async resume(id: string, rawInput: unknown): Promise<PublicRun> {
     const input = ResumeRunInputSchema.parse(rawInput)
     const run = await this.getRecord(id)
-    if (!run.status.startsWith('waiting_')) throw new Error('当前任务不在等待人工处理状态')
+    const resumableFailure = this.canResumeStoredProgress(run)
+    if (!run.status.startsWith('waiting_') && !resumableFailure) throw new Error('当前任务不在等待人工处理状态')
     if (run.cancelRequested) throw new Error('任务已请求取消')
-    await this.runs.update(id, { status: 'queued', interrupt: null, error: null })
+    const executionInput = await this.resumeExecutionInput(run, input)
+    await this.runs.update(id, {
+      status: 'queued',
+      interrupt: null,
+      error: null,
+      completedAt: null,
+      updatedAt: new Date()
+    })
     this.events.emit(id, 'run.queued', { resumed: true })
-    const executionInput = run.status === 'waiting_step_review'
-      ? null
-      : new Command({ resume: input })
     setImmediate(() => void this.execute(id, executionInput))
     return this.get(id)
   }
@@ -237,7 +246,39 @@ export class RunsService {
     }
   }
 
-  private async execute(id: string, input: WorkflowState | Command<ResumeRunInput> | null): Promise<void> {
+  private canResumeStoredProgress(run: WorkflowRunRecord): boolean {
+    return run.status === 'failed' && WorkflowStateSchema.safeParse(run.state).success
+  }
+
+  private async resumeExecutionInput(run: WorkflowRunRecord, input: ResumeRunInput): Promise<ExecutionInput> {
+    if (run.status === 'waiting_step_review' || this.canResumeStoredProgress(run)) {
+      return this.stepResumeInput(run)
+    }
+    return new Command({ resume: input })
+  }
+
+  private async stepResumeInput(run: WorkflowRunRecord): Promise<ExecutionInput> {
+    const persistedState = WorkflowStateSchema.parse(run.state)
+    if (await this.hasRunnableCheckpoint(run)) return null
+    if (!run.currentNode) throw new Error('缺少可继续的流程节点')
+    return new Command({
+      update: persistedState as unknown as Record<string, unknown>,
+      goto: run.currentNode
+    })
+  }
+
+  private async hasRunnableCheckpoint(run: WorkflowRunRecord): Promise<boolean> {
+    try {
+      const snapshot = await this.workflow.graph.getState({
+        configurable: { thread_id: run.threadId }
+      })
+      return snapshot.next.length > 0 && WorkflowStateSchema.safeParse(snapshot.values).success
+    } catch {
+      return false
+    }
+  }
+
+  private async execute(id: string, input: ExecutionInput): Promise<void> {
     if (this.activeRuns.has(id)) return
     this.activeRuns.add(id)
     try {
@@ -252,9 +293,13 @@ export class RunsService {
         durability: 'sync' as const
       }
       const stream = await this.workflow.graph.stream(input as never, config)
-      let latestState: WorkflowState | undefined
+      const persistedState = WorkflowStateSchema.safeParse(run.state)
+      let latestState: WorkflowState | undefined = persistedState.success ? persistedState.data : undefined
+      let sawStateUpdate = false
       for await (const value of stream) {
-        const state = WorkflowStateSchema.parse(value)
+        const state = this.normalizeStreamState(value, latestState)
+        if (!state) continue
+        sawStateUpdate = true
         latestState = state
         const snapshot = await this.workflow.graph.getState(config)
         const currentNode = snapshot.next[0] ?? null
@@ -279,9 +324,10 @@ export class RunsService {
       }
 
       const snapshot = await this.workflow.graph.getState(config)
-      const snapshotState = WorkflowStateSchema.safeParse(snapshot.values)
-      const state = snapshotState.success ? snapshotState.data : latestState
-      if (!state) throw snapshotState.error
+      const snapshotParse = WorkflowStateSchema.safeParse(snapshot.values)
+      const state = this.normalizeStreamState(snapshot.values, latestState)
+        ?? (sawStateUpdate ? latestState : undefined)
+      if (!state) throw snapshotParse.success ? new Error('Workflow state is incomplete') : snapshotParse.error
       const interruptions = snapshot.tasks.flatMap((task) => task.interrupts ?? [])
       if (interruptions.length > 0) {
         const interruptValue = interruptions[0].value as Record<string, unknown> | undefined
@@ -344,6 +390,18 @@ export class RunsService {
     const writes = (metadata as { writes?: unknown }).writes
     if (!writes || typeof writes !== 'object' || Array.isArray(writes)) return null
     return Object.keys(writes)[0] ?? null
+  }
+
+  private normalizeStreamState(value: unknown, base: WorkflowState | undefined): WorkflowState | null {
+    const parsed = WorkflowStateSchema.safeParse(value)
+    if (parsed.success) return parsed.data
+    if (!base || !value || typeof value !== 'object' || Array.isArray(value)) return null
+    const update = Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).filter(([key]) => workflowStateKeys.has(key))
+    )
+    if (Object.keys(update).length === 0) return null
+    const merged = WorkflowStateSchema.safeParse({ ...base, ...update })
+    return merged.success ? merged.data : null
   }
 
   private async getRecord(id: string): Promise<WorkflowRunRecord> {

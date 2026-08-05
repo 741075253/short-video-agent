@@ -27,6 +27,65 @@ function baseState(): WorkflowState {
 }
 
 describe('workflow safety', () => {
+  it('merges partial streamed state with the last complete workflow state', () => {
+    const service = Object.create(RunsService.prototype) as unknown as {
+      normalizeStreamState(value: unknown, base: WorkflowState | undefined): WorkflowState | null
+    }
+    const state = baseState()
+
+    const normalized = service.normalizeStreamState({
+      storyAnalysis: {
+        summary: 'Summary',
+        facts: [],
+        characters: [{ name: 'Hero', description: 'Lead character' }],
+        locations: [],
+        events: [{ order: 1, description: 'Opening event', characterNames: ['Hero'] }],
+        conflicts: []
+      }
+    }, state)
+
+    expect(normalized).toMatchObject({
+      runId: state.runId,
+      projectId: state.projectId,
+      storyAnalysis: { summary: 'Summary' }
+    })
+  })
+
+  it('ignores empty streamed chunks instead of treating them as workflow state', () => {
+    const service = Object.create(RunsService.prototype) as unknown as {
+      normalizeStreamState(value: unknown, base: WorkflowState | undefined): WorkflowState | null
+    }
+
+    expect(service.normalizeStreamState({}, baseState())).toBeNull()
+  })
+
+  it('does not resume from a checkpoint that has next node but incomplete values', async () => {
+    const service = Object.assign(Object.create(RunsService.prototype), {
+      workflow: {
+        graph: {
+          getState: vi.fn(async () => ({
+            next: ['director'],
+            values: {
+              storyAnalysis: {
+                summary: 'Summary',
+                facts: [],
+                characters: [{ name: 'Hero', description: 'Lead character' }],
+                locations: [],
+                events: [{ order: 1, description: 'Opening event', characterNames: ['Hero'] }],
+                conflicts: []
+              }
+            },
+            tasks: []
+          }))
+        }
+      }
+    }) as unknown as {
+      hasRunnableCheckpoint(run: { threadId: string }): Promise<boolean>
+    }
+
+    await expect(service.hasRunnableCheckpoint({ threadId: 'thread-1' })).resolves.toBe(false)
+  })
+
   it('clears stale downstream state after an upstream rollback', () => {
     const state: WorkflowState = {
       ...baseState(),

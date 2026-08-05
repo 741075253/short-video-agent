@@ -127,6 +127,7 @@ export function App() {
 
   const currentProvider = modelCatalog?.video.find((provider) => provider.id === config.videoProvider)
   const active = run && !terminalStatuses.includes(run.status)
+  const resumableFailedRun = run?.status === 'failed' && Boolean(run.state) && Boolean(run.currentNode)
   const tokenUsed = run ? run.budget.usedInputTokens + run.budget.usedOutputTokens : 0
   const finalArtifact = artifacts.find((artifact) => artifact.kind === 'final_video' && artifact.status === 'current')
 
@@ -206,6 +207,7 @@ export function App() {
     setBusy(true)
     try {
       const reviewingStep = run.status === 'waiting_step_review'
+      const recoveringFailedRun = run.status === 'failed'
       await api.resumeRun(run.id, {
         approved,
         feedback: feedback || undefined,
@@ -214,7 +216,7 @@ export function App() {
       setFeedback('')
       setDraftStoryboard(null)
       await refreshRun(run.id)
-      setMessage(reviewingStep ? '已开始执行下一步' : approved ? '已确认，流程继续执行' : '已提交返工意见')
+      setMessage(recoveringFailedRun ? '已从上次进度继续执行' : reviewingStep ? '已开始执行下一步' : approved ? '已确认，流程继续执行' : '已提交返工意见')
     } finally {
       setBusy(false)
     }
@@ -487,6 +489,19 @@ export function App() {
                   </div>
                   <button className="primaryButton" disabled={busy} onClick={() => void resume(true)}>
                     <Play size={16} />执行下一步：{nextNode ? workflowNodeLabels[nextNode] ?? nextNode : '继续'}
+                  </button>
+                </section>
+              )}
+
+              {resumableFailedRun && (
+                <section className="decisionBand warningBand">
+                  <StepForward size={20} />
+                  <div>
+                    <strong>流程已保存到 {nextNode ? workflowNodeLabels[nextNode] ?? nextNode : '当前节点'}</strong>
+                    <p>上次执行中断后保留了节点状态，可直接从这里继续，不需要重新运行已完成步骤。</p>
+                  </div>
+                  <button className="primaryButton" disabled={busy} onClick={() => void resume(true)}>
+                    <Play size={16} />继续执行：{nextNode ? workflowNodeLabels[nextNode] ?? nextNode : '恢复流程'}
                   </button>
                 </section>
               )}

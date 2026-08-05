@@ -6,7 +6,7 @@
   "scripts": {
     "db:up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/podman-compose.ps1 up",
     "db:down": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/podman-compose.ps1 down",
-    "dev": "tsx src/server/index.ts",
+    "dev": "node scripts/run-tsx.cjs src/server/index.ts",
     "web": "vite --host 127.0.0.1",
     "test": "vitest run",
     "test:watch": "vitest",

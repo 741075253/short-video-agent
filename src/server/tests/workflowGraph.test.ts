@@ -1,4 +1,4 @@
-import { MemorySaver } from '@langchain/langgraph'
+import { Command, MemorySaver } from '@langchain/langgraph'
 import { describe, expect, it, vi } from 'vitest'
 import type { AgentNodesService } from '../nest/workflow/agent-nodes.service'
 import { WorkflowGraphService } from '../nest/workflow/workflow-graph.service'
@@ -153,5 +153,78 @@ describe('workflow graph', () => {
     expect(snapshot.next).toEqual(['character'])
     expect(storyAnalyzer).toHaveBeenCalledTimes(1)
     expect(director).toHaveBeenCalledTimes(1)
+  })
+
+  it('can continue from stored state and a next node when checkpoint state is unavailable', async () => {
+    const storyAnalyzer = vi.fn(async () => {
+      throw new Error('story analyzer should not run')
+    })
+    const director = vi.fn(async () => ({
+      directorPlan: {
+        audience: '大众',
+        tone: '紧张',
+        pacing: '紧凑',
+        visualDirection: '竖屏动画',
+        adaptationGoals: ['保留主线'],
+        episodeSummaries: [{ episode: 1, summary: '单集', targetDurationSeconds: 60 }]
+      }
+    }))
+    const pass = vi.fn(async () => ({}))
+    const nodes = {
+      storyAnalyzer,
+      director,
+      character: pass,
+      characterReference: pass,
+      characterApproval: pass,
+      plot: pass,
+      scene: pass,
+      storyboard: pass,
+      storyboardApproval: pass,
+      production: pass,
+      editing: pass,
+      reviewer: pass,
+      directorReview: pass,
+      humanReview: pass
+    } as unknown as AgentNodesService
+    const graph = new WorkflowGraphService(nodes, { saver: new MemorySaver() } as never).graph
+    const storedState = WorkflowStateSchema.parse({
+      runId: 'run-stored',
+      projectId: 'project-stored',
+      sourceText: '这是一个长度足够的测试故事内容。',
+      productionConfig: defaultProductionConfig,
+      usageBudget: defaultUsageBudget,
+      revisionCount: {},
+      errors: [],
+      storyAnalysis: {
+        summary: '摘要',
+        facts: [],
+        characters: [{ name: '男主', description: '主角' }],
+        locations: [],
+        events: [{ order: 1, description: '事件', characterNames: ['男主'] }],
+        conflicts: []
+      }
+    })
+
+    const config = {
+      configurable: { thread_id: 'stored-progress' },
+      streamMode: 'values',
+      durability: 'sync'
+    } as const
+    await graph.updateState(
+      config,
+      { storyAnalysis: storedState.storyAnalysis },
+      'story_analyzer'
+    )
+
+    for await (const _ of await graph.stream(new Command({
+      update: storedState as unknown as Record<string, unknown>,
+      goto: 'director'
+    }) as never, config as never)) void _
+
+    const snapshot = await graph.getState(config)
+    expect(snapshot.next).toEqual(['character'])
+    expect(storyAnalyzer).not.toHaveBeenCalled()
+    expect(director).toHaveBeenCalledTimes(1)
+    expect(WorkflowStateSchema.parse(snapshot.values).directorPlan?.audience).toBe('大众')
   })
 })
