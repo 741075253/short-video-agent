@@ -1,45 +1,42 @@
+:root {
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  color: #202322;
+  background: #e8ebe7;
+  font-synthesis: none;
+  letter-spacing: 0;
+  --ink: #181a1b;
+  --paper: #f4f5f2;
+  --white: #ffffff;
+  --line: #cfd4ce;
+  --muted: #66706a;
+  --green: #2f7d5b;
+  --green-dark: #225c44;
+  --yellow: #d6a93b;
+  --red: #b7483a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
+  min-width: 320px;
+  min-height: 100vh;
   margin: 0;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #eef1f4;
-  color: #1f2933;
+  background: #e8ebe7;
 }
 
-.page {
-  display: grid;
-  grid-template-columns: 360px 260px 1fr;
-  gap: 16px;
-  padding: 20px;
-}
-
-.panel {
-  background: #ffffff;
-  border: 1px solid #e5e0d8;
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 10px 30px rgba(31, 41, 51, 0.08);
-}
-
-.wide {
-  min-width: 0;
-}
-
-label {
-  display: grid;
-  gap: 6px;
-  margin: 12px 0;
-  font-size: 14px;
-}
-
+button,
 input,
 textarea,
 select {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #c9d1d9;
-  border-radius: 8px;
-  padding: 10px;
   font: inherit;
+  letter-spacing: 0;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
 }
 
 button:focus-visible,
@@ -47,170 +44,780 @@ a:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(37, 99, 235, 0.25);
+  outline: 3px solid rgba(214, 169, 59, 0.55);
   outline-offset: 2px;
 }
 
+.studio {
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 56px;
+  padding: 0 18px;
+  border-bottom: 1px solid #303331;
+  background: var(--ink);
+  color: var(--white);
+}
+
+.brand,
+.topbarStatus,
+.sectionTitle,
+.headerActions,
+.primaryButton,
+.secondaryButton,
+.dangerButton,
+.projectItem,
+.decisionBand,
+.errorBox,
+.exportLinks,
+.approvalActions > div {
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 9px;
+  font-family: 'Arial Narrow', 'Segoe UI', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand svg {
+  color: var(--yellow);
+}
+
+.topbarStatus {
+  min-width: 0;
+  gap: 12px;
+}
+
+.message {
+  max-width: min(48vw, 640px);
+  overflow: hidden;
+  color: #dce2dd;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.statusPill {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid #606662;
+  border-radius: 4px;
+  font: 12px Consolas, monospace;
+  color: #e8ede9;
+}
+
+.status-running,
+.status-queued,
+.status-cancel_requested {
+  border-color: var(--yellow);
+  color: #f4d784;
+}
+
+.status-completed {
+  border-color: #51a77e;
+  color: #8cd8b2;
+}
+
+.status-failed,
+.status-cancelled {
+  border-color: #d57064;
+  color: #efaaa2;
+}
+
+.studioGrid {
+  display: grid;
+  grid-template-columns: 286px minmax(600px, 1fr) 280px;
+  min-height: calc(100vh - 56px);
+}
+
+.projectRail,
+.runRail {
+  min-width: 0;
+  background: var(--paper);
+}
+
+.projectRail {
+  border-right: 1px solid var(--line);
+}
+
+.runRail {
+  padding: 18px;
+  border-left: 1px solid var(--line);
+}
+
+.newProject,
+.projectList {
+  padding: 18px;
+}
+
+.newProject {
+  border-bottom: 1px solid var(--line);
+}
+
+h1,
+h2,
+p {
+  margin-top: 0;
+}
+
+h1,
+h2 {
+  font-family: 'Arial Narrow', 'Segoe UI', sans-serif;
+}
+
+h1 {
+  margin-bottom: 0;
+  font-size: 27px;
+  line-height: 1.15;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.sectionTitle {
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  margin-bottom: 12px;
+}
+
+.sectionTitle h2,
+.sectionTitle p {
+  margin: 0;
+}
+
+.sectionTitle > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #4e5752;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #bbc2bc;
+  border-radius: 4px;
+  background: var(--white);
+  color: #202322;
+}
+
+input,
+select {
+  height: 38px;
+  padding: 0 9px;
+}
+
+textarea {
+  resize: vertical;
+  padding: 9px;
+  line-height: 1.45;
+}
+
+.newProject label + label,
+.approvalActions label {
+  margin-top: 12px;
+}
+
 button,
-a {
-  display: inline-block;
-  border: 0;
-  border-radius: 8px;
-  background: #2563eb;
-  color: white;
-  padding: 9px 12px;
-  margin: 4px 4px 4px 0;
-  text-decoration: none;
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  min-height: 36px;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 7px 11px;
   cursor: pointer;
+  text-decoration: none;
 }
 
 button:disabled {
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.5;
 }
 
-.listItem {
-  display: block;
+.primaryButton {
+  background: var(--green);
+  color: var(--white);
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: var(--green-dark);
+}
+
+.secondaryButton {
+  border-color: #aeb6b0;
+  background: var(--white);
+  color: #313632;
+}
+
+.dangerButton {
   width: 100%;
-  text-align: left;
-  background: #475569;
+  border-color: #d8aaa4;
+  background: #fff8f7;
+  color: var(--red);
 }
 
-.message {
-  color: #b45309;
+.newProject .primaryButton {
+  width: 100%;
+  margin-top: 12px;
 }
 
-.actions {
-  display: flex;
-  flex-wrap: wrap;
+.iconButton {
+  display: inline-grid;
+  width: 32px;
+  min-height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid #bdc4be;
+  border-radius: 4px;
+  background: transparent;
+  color: #4f5752;
+}
+
+.projectList {
+  display: grid;
   gap: 6px;
 }
 
-.generationControls {
+.projectItem {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 16px;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #343a36;
+  text-align: left;
+}
+
+.projectItem span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectItem:hover,
+.projectItem.selected {
+  border-color: #bac2bb;
+  background: var(--white);
+}
+
+.projectItem.selected {
+  box-shadow: inset 3px 0 0 var(--green);
+}
+
+.workArea {
+  min-width: 0;
+  padding: 24px clamp(18px, 3vw, 42px) 56px;
+  background: var(--white);
+}
+
+.emptyWorkspace {
+  display: grid;
+  min-height: 55vh;
+  color: #7b847e;
+  place-content: center;
+  place-items: center;
+}
+
+.emptyWorkspace h1 {
+  margin-top: 10px;
+  font-size: 20px;
+}
+
+.projectHeader {
   display: flex;
-  align-items: end;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin: 16px 0;
-  padding: 14px 0;
-  border-top: 1px solid #e5e0d8;
-  border-bottom: 1px solid #e5e0d8;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding-bottom: 18px;
+  border-bottom: 2px solid var(--ink);
 }
 
-.compactControl {
-  min-width: 190px;
-  margin: 0;
-  color: #475569;
-  font-weight: 600;
+.eyebrow,
+.runCode {
+  font: 11px Consolas, monospace;
+  color: var(--muted);
+  text-transform: uppercase;
 }
 
-.durationControl {
-  min-width: 96px;
-  width: 96px;
+.headerActions {
+  flex: none;
+  gap: 8px;
 }
 
-.segmentedControl {
-  min-width: 164px;
+.configBand {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(140px, 1fr)) repeat(2, minmax(84px, 0.5fr)) minmax(142px, 0.7fr);
+  gap: 10px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.configBand fieldset {
+  min-width: 0;
   margin: 0;
   padding: 0;
   border: 0;
 }
 
-.segmentedControl legend {
+.configBand legend {
   margin-bottom: 6px;
-  color: #475569;
-  font-size: 14px;
-  font-weight: 600;
+  color: #4e5752;
+  font-size: 12px;
+  font-weight: 650;
 }
 
-.segmentedControl div {
+.segment {
   display: grid;
-  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  grid-template-columns: repeat(2, minmax(64px, 1fr));
   overflow: hidden;
-  border: 1px solid #c9d1d9;
-  border-radius: 8px;
+  height: 38px;
+  border: 1px solid #bbc2bc;
+  border-radius: 4px;
 }
 
-.segmentedControl button {
-  min-height: 40px;
-  margin: 0;
+.segment button {
+  min-height: 36px;
+  border: 0;
   border-radius: 0;
-  background: #ffffff;
-  color: #475569;
+  background: var(--white);
+  color: #545d57;
 }
 
-.segmentedControl button + button {
-  border-left: 1px solid #c9d1d9;
+.segment button + button {
+  border-left: 1px solid #bbc2bc;
 }
 
-.segmentedControl button[aria-pressed='true'] {
-  background: #1f2933;
-  color: #ffffff;
+.segment button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--white);
 }
 
-.checkboxControl {
-  display: flex;
-  align-items: center;
+.timelineSection,
+.approvalSection {
+  padding: 22px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.workflowTimeline {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(68px, 1fr));
+  min-width: 760px;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  list-style: none;
+}
+
+.timelineSection {
+  overflow-x: auto;
+}
+
+.workflowTimeline li {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  justify-items: center;
+  color: #858c87;
+  font-size: 11px;
+  text-align: center;
+}
+
+.workflowTimeline li::before {
+  position: absolute;
+  top: 14px;
+  right: 50%;
+  left: -50%;
+  z-index: 0;
+  height: 2px;
+  background: #d6dad6;
+  content: '';
+}
+
+.workflowTimeline li:first-child::before {
+  display: none;
+}
+
+.stageMarker {
+  z-index: 1;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  border: 2px solid #c9cfca;
+  border-radius: 50%;
+  background: var(--white);
+  font: 11px Consolas, monospace;
+  place-items: center;
+}
+
+.workflowTimeline li.complete,
+.workflowTimeline li.active {
+  color: #29312c;
+}
+
+.workflowTimeline li.complete::before {
+  background: var(--green);
+}
+
+.workflowTimeline li.complete .stageMarker {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--white);
+}
+
+.workflowTimeline li.active .stageMarker {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(214, 169, 59, 0.18);
+  color: #765812;
+}
+
+.characterGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.characterItem {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.characterItem img,
+.mediaPlaceholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  background: #dfe3df;
+}
+
+.characterItem > div:last-child {
+  padding: 10px;
+}
+
+.characterItem p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.shotList {
+  display: grid;
+  gap: 10px;
+}
+
+.shotEditor {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.shotIndex {
+  font: 22px Consolas, monospace;
+  color: var(--green);
+}
+
+.shotFields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.shotFields label:nth-child(n + 3) {
+  grid-column: span 2;
+}
+
+.approvalActions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 16px;
+  align-items: end;
+  margin-top: 16px;
+}
+
+.approvalActions label {
+  margin: 0;
+}
+
+.approvalActions > div {
   gap: 8px;
-  min-height: 40px;
+}
+
+.decisionBand {
+  gap: 12px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid;
+  border-radius: 6px;
+}
+
+.decisionBand > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.decisionBand p {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.warningBand {
+  border-color: #d9bd77;
+  background: #fffaf0;
+  color: #765812;
+}
+
+.successBand {
+  border-color: #85b89f;
+  background: #f4fbf7;
+  color: var(--green-dark);
+}
+
+.finalPreview {
+  display: block;
+  width: min(360px, 100%);
+  aspect-ratio: 9 / 16;
+  margin: 0 auto 14px;
+  background: var(--ink);
+  object-fit: contain;
+}
+
+.issueText {
+  margin: 7px 0;
+  color: var(--red);
+  font-size: 13px;
+}
+
+.runMetrics {
+  margin: 0 0 18px;
+}
+
+.runMetrics > div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #d6dad6;
+}
+
+.runMetrics dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.runMetrics dd {
+  min-width: 0;
   margin: 0;
-  color: #475569;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  font: 12px Consolas, monospace;
+  color: #303632;
 }
 
-.checkboxControl input {
-  width: 18px;
-  height: 18px;
-  margin: 0;
+.errorBox {
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #d9aaa5;
+  border-radius: 4px;
+  background: #fff8f7;
+  color: var(--red);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
-.generateButton {
-  min-height: 42px;
-  margin: 0 0 1px auto;
-  padding-inline: 18px;
+.errorBox svg {
+  flex: none;
 }
 
-.shot {
-  border-top: 1px solid #e5e0d8;
-  padding-top: 12px;
+.exportLinks {
+  gap: 8px;
   margin-top: 12px;
 }
 
-.shotError {
-  margin: 8px 0;
-  color: #b42318;
-  font-size: 14px;
+.exportLinks a {
+  color: var(--green-dark);
+  font: 12px Consolas, monospace;
 }
 
-.retryButton {
-  background: #b42318;
+.versionList {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
-@media (max-width: 1100px) {
-  .page {
-    grid-template-columns: minmax(280px, 1fr) minmax(220px, 0.75fr);
+.versionList h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.versionList > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  border-bottom: 1px solid #dfe3df;
+  font: 11px Consolas, monospace;
+}
+
+.versionList span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.versionList strong {
+  color: var(--green);
+  font-size: 11px;
+}
+
+.emptyText {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 1180px) {
+  .studioGrid {
+    grid-template-columns: 250px minmax(520px, 1fr);
   }
 
-  .wide {
+  .runRail {
     grid-column: 1 / -1;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .runMetrics {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    gap: 12px;
+  }
+
+  .runMetrics > div {
+    display: block;
+  }
+
+  .runMetrics dd {
+    margin-top: 5px;
+  }
+
+  .configBand {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
   }
 }
 
-@media (max-width: 680px) {
-  .page {
-    grid-template-columns: 1fr;
-    padding: 12px;
+@media (max-width: 760px) {
+  .topbar {
+    align-items: flex-start;
+    gap: 8px;
+    padding-block: 10px;
   }
 
-  .wide {
+  .topbarStatus {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .message {
+    max-width: 55vw;
+  }
+
+  .studioGrid {
+    display: block;
+  }
+
+  .projectRail,
+  .runRail {
+    border: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .projectList {
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .workArea {
+    padding: 18px 14px 38px;
+  }
+
+  .projectHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .headerActions > * {
+    flex: 1;
+  }
+
+  .configBand,
+  .shotFields,
+  .approvalActions,
+  .runMetrics {
+    grid-template-columns: 1fr;
+  }
+
+  .shotFields label:nth-child(n + 3) {
     grid-column: auto;
   }
 
-  .generationControls > * {
-    width: 100%;
+  .approvalActions > div {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .generateButton {
-    margin-left: 0;
+  .decisionBand {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .decisionBand .primaryButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
   }
 }

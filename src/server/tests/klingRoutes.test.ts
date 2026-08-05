@@ -122,7 +122,7 @@ describe('Kling video route', () => {
       .post(`/api/projects/${id}/generate-video`)
       .send({
         provider: 'kling',
-        options: { durationSeconds: 8, resolution: '720p', nativeAudio: true }
+        options: { durationSeconds: 8, resolution: '720p', nativeAudio: false }
       })
       .expect(200)
 
@@ -131,7 +131,7 @@ describe('Kling video route', () => {
     expect(mocks.generateClips.mock.calls[0][3]).toEqual({
       durationSeconds: 8,
       resolution: '720p',
-      nativeAudio: true
+      nativeAudio: false
     })
     expect(mocks.renderVideo).toHaveBeenCalledTimes(1)
     const persisted = await request(app).get(`/api/projects/${id}`).expect(200)
@@ -143,7 +143,7 @@ describe('Kling video route', () => {
         model: 'kling-v3',
         durationSeconds: 8,
         resolution: '720p',
-        nativeAudio: true
+        nativeAudio: false
       }
     })
     expect(persisted.body.storyPackage.shots[0].assetPath).toMatch(/shot-1\.png$/)

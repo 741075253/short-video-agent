@@ -49,7 +49,7 @@ export async function generateStoryPackageWithModel(
   model: TextGenerationModel,
   config: StoryModelConfig = textGenConfig
 ): Promise<StoryPackage> {
-  if (!config.apiKey) throw new Error('未配置 Token Plan API Key，请设置 TOKEN_PLAN_API_KEY')
+  if (!config.apiKey) throw new Error('未配置文本模型 API Key')
 
   const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',

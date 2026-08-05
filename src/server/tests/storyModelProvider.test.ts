@@ -6,7 +6,7 @@ afterEach(() => {
 })
 
 describe('storyModelProvider', () => {
-  it('calls Token Plan chat completions and maps model JSON to a story package', async () => {
+  it('calls an OpenAI-compatible endpoint and maps model JSON to a story package', async () => {
     const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       const requestBody = JSON.parse(String(init?.body))
       expect(requestBody).toMatchObject({
@@ -43,11 +43,11 @@ describe('storyModelProvider', () => {
     const result = await generateStoryPackageWithModel(
       { sourceText: '少年林川推开门，看见远处城市燃烧。', style: 'animation_drama' },
       'qwen3.8-max',
-      { apiKey: 'token-plan-key', baseUrl: 'https://token-plan.test/compatible-mode/v1' }
+      { apiKey: 'api-key', baseUrl: 'https://models.test/compatible-mode/v1' }
     )
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'https://token-plan.test/compatible-mode/v1/chat/completions',
+      'https://models.test/compatible-mode/v1/chat/completions',
       expect.objectContaining({ method: 'POST' })
     )
     expect(result.shots[0]).toMatchObject({

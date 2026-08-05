@@ -1,0 +1,109 @@
+{
+  "defaults": {
+    "text": "qwen3.8-max",
+    "image": "wan2.7-image-pro",
+    "video": "happyhorse_i2v"
+  },
+  "text": [
+    {
+      "id": "qwen3.8-max",
+      "label": "Qwen 3.8 Max",
+      "adapter": "openai-compatible",
+      "apiKeyEnv": "QIAN_WEN_API_KEY",
+      "baseUrlEnv": "QIAN_WEN_BASE_URL",
+      "baseUrl": "https://dashscope.aliyuncs.com",
+      "basePath": "/compatible-mode/v1",
+      "model": "qwen3.8-max"
+    }
+  ],
+  "image": [
+    {
+      "id": "wan2.7-image-pro",
+      "label": "Wan 2.7 Image Pro",
+      "adapter": "dashscope-image",
+      "apiKeyEnv": "QIAN_WEN_API_KEY",
+      "baseUrlEnv": "QIAN_WEN_BASE_URL",
+      "baseUrl": "https://dashscope.aliyuncs.com",
+      "model": "wan2.7-image-pro",
+      "size": "1024x1792"
+    }
+  ],
+  "video": [
+    {
+      "id": "happyhorse_i2v",
+      "label": "HappyHorse 1.1 图生视频",
+      "adapter": "dashscope-video",
+      "apiKeyEnv": "QIAN_WEN_API_KEY",
+      "baseUrlEnv": "QIAN_WEN_BASE_URL",
+      "baseUrl": "https://dashscope.aliyuncs.com",
+      "model": "happyhorse-1.1-i2v",
+      "inputMode": "i2v",
+      "capabilities": {
+        "duration": { "min": 3, "max": 15, "default": 5 },
+        "resolutions": ["720p", "1080p"],
+        "defaultResolution": "1080p",
+        "nativeAudio": false,
+        "aiVideo": true,
+        "imageToVideo": true,
+        "staticFallback": false
+      }
+    },
+    {
+      "id": "happyhorse_r2v",
+      "label": "HappyHorse 1.1 参考生视频",
+      "adapter": "dashscope-video",
+      "apiKeyEnv": "QIAN_WEN_API_KEY",
+      "baseUrlEnv": "QIAN_WEN_BASE_URL",
+      "baseUrl": "https://dashscope.aliyuncs.com",
+      "model": "happyhorse-1.1-r2v",
+      "inputMode": "r2v",
+      "capabilities": {
+        "duration": { "min": 3, "max": 15, "default": 5 },
+        "resolutions": ["720p", "1080p"],
+        "defaultResolution": "1080p",
+        "nativeAudio": false,
+        "aiVideo": true,
+        "imageToVideo": true,
+        "staticFallback": false
+      }
+    },
+    {
+      "id": "happyhorse_t2v",
+      "label": "HappyHorse 1.1 文生视频",
+      "adapter": "dashscope-video",
+      "apiKeyEnv": "QIAN_WEN_API_KEY",
+      "baseUrlEnv": "QIAN_WEN_BASE_URL",
+      "baseUrl": "https://dashscope.aliyuncs.com",
+      "model": "happyhorse-1.1-t2v",
+      "inputMode": "t2v",
+      "capabilities": {
+        "duration": { "min": 3, "max": 15, "default": 5 },
+        "resolutions": ["720p", "1080p"],
+        "defaultResolution": "1080p",
+        "nativeAudio": false,
+        "aiVideo": true,
+        "imageToVideo": false,
+        "staticFallback": false
+      }
+    },
+    {
+      "id": "kling",
+      "label": "Kling 3.0 Turbo",
+      "adapter": "kling-video",
+      "apiKeyEnv": "KLING_API_KEY",
+      "baseUrlEnv": "KLING_BASE_URL",
+      "baseUrl": "https://api.klingai.com",
+      "model": "kling-v3",
+      "inputMode": "i2v",
+      "capabilities": {
+        "duration": { "min": 3, "max": 15, "default": 5 },
+        "resolutions": ["720p", "1080p"],
+        "defaultResolution": "1080p",
+        "nativeAudio": false,
+        "aiVideo": true,
+        "imageToVideo": true,
+        "staticFallback": false
+      }
+    }
+  ]
+}

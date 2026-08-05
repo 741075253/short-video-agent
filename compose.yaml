@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:17-alpine
+    container_name: short-video-agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: short_video
+      POSTGRES_PASSWORD: short_video
+      POSTGRES_DB: short_video_agent
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U short_video -d short_video_agent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

@@ -22,6 +22,33 @@ export const defaultVideoGenerationOptions: VideoGenerationOptions = {
   nativeAudio: false
 }
 
+export const RealVideoGenerationProviderNameSchema = z.string().min(1).refine(
+  (value) => value !== 'mock' && value !== 'local_ffmpeg',
+  '工作流只允许使用真实视频模型'
+)
+export type RealVideoGenerationProviderName = z.infer<typeof RealVideoGenerationProviderNameSchema>
+
+export const ProductionConfigSchema = z.object({
+  targetDurationSeconds: z.coerce.number().int().min(5).max(3600).default(60),
+  episodeCount: z.coerce.number().int().min(1).max(100).default(1),
+  aspectRatio: z.literal('9:16').default('9:16'),
+  visualStyle: z.string().min(1).default('animation_drama'),
+  language: z.literal('zh-CN').default('zh-CN'),
+  subtitleEnabled: z.literal(true).default(true),
+  narrationEnabled: z.literal(false).default(false),
+  textModel: z.string().min(1).default('qwen3.8-max'),
+  imageModel: z.string().min(1).default('wan2.7-image-pro'),
+  videoProvider: RealVideoGenerationProviderNameSchema.default('happyhorse_i2v'),
+  videoOptions: z.object({
+    durationSeconds: z.coerce.number().int().min(3).max(15).default(5),
+    resolution: VideoResolutionSchema.default('1080p'),
+    nativeAudio: z.literal(false).default(false)
+  }).default({ durationSeconds: 5, resolution: '1080p', nativeAudio: false })
+})
+export type ProductionConfig = z.infer<typeof ProductionConfigSchema>
+
+export const defaultProductionConfig: ProductionConfig = ProductionConfigSchema.parse({})
+
 export const VideoClipMetadataSchema = z.object({
   provider: z.string(),
   model: z.string(),
@@ -84,7 +111,9 @@ export const ProjectSchema = z.object({
   name: z.string(),
   sourceText: z.string(),
   style: VideoStyleSchema,
+  productionConfig: ProductionConfigSchema.optional(),
   storyPackage: StoryPackageSchema.optional(),
+  finalOutputPath: z.string().optional(),
   createdAt: z.string(),
   updatedAt: z.string()
 })
@@ -96,45 +125,19 @@ export const GenerateStoryInputSchema = z.object({
 })
 export type GenerateStoryInput = z.infer<typeof GenerateStoryInputSchema>
 
-export const TextGenerationModelSchema = z.enum([
-  'qwen3.8-max-preview',
-  'qwen3.7-max',
-  'qwen3.7-plus',
-  'qwen3.6-flash',
-  'qwen3.8-max',
-  'deepseek-v4-flash-0731',
-  'deepseek-v4-pro',
-  'glm-5.2'
-])
+export const TextGenerationModelSchema = z.string().min(1)
 export type TextGenerationModel = z.infer<typeof TextGenerationModelSchema>
 
-export const ImageGenerationModelSchema = z.enum(['wan2.7-image', 'wan2.7-image-pro'])
+export const ImageGenerationModelSchema = z.string().min(1)
 export type ImageGenerationModel = z.infer<typeof ImageGenerationModelSchema>
 
-export const HappyHorseModelSchema = z.enum([
-  'happyhorse-1.1-i2v',
-  'happyhorse-1.1-t2v',
-  'happyhorse-1.1-r2v'
-])
+export const HappyHorseModelSchema = z.string().min(1)
 export type HappyHorseModel = z.infer<typeof HappyHorseModelSchema>
-
-export const modelCatalog = {
-  text: TextGenerationModelSchema.options,
-  image: ImageGenerationModelSchema.options,
-  tts: ['qwen-audio-3.0-tts-plus'] as const
-}
 
 export const VideoProviderNameSchema = z.enum(['mock', 'local_ffmpeg'])
 export type VideoProviderName = z.infer<typeof VideoProviderNameSchema>
 
-export const VideoGenerationProviderNameSchema = z.enum([
-  'mock',
-  'local_ffmpeg',
-  'kling',
-  'happyhorse_i2v',
-  'happyhorse_t2v',
-  'happyhorse_r2v'
-])
+export const VideoGenerationProviderNameSchema = z.string().min(1)
 export type VideoGenerationProviderName = z.infer<typeof VideoGenerationProviderNameSchema>
 
 export type VideoProviderCapabilities = {
@@ -150,7 +153,27 @@ export type VideoProviderCapabilities = {
 export type VideoProviderDescriptor = {
   id: VideoGenerationProviderName
   label: string
+  adapter?: string
+  model?: string
   capabilities: VideoProviderCapabilities
+}
+
+export type ModelDescriptor = {
+  id: string
+  label: string
+  adapter: string
+  model: string
+}
+
+export type ModelCatalogResponse = {
+  defaults: {
+    textModel: string
+    imageModel: string
+    videoProvider: string
+  }
+  text: ModelDescriptor[]
+  image: ModelDescriptor[]
+  video: VideoProviderDescriptor[]
 }
 
 export const KlingConfigSchema = z.object({

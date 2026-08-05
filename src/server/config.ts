@@ -39,43 +39,32 @@ export const ffmpegConfig = {
   fallback: 'ffmpeg' as const,
 }
 
-/** 阿里云百炼 Token Plan 配置 */
-function normalizeTokenPlanApiKey(value: string | undefined): string {
-  const apiKey = value?.trim() ?? ''
-  return apiKey.startsWith('ssk-sp-') ? apiKey.slice(1) : apiKey
-}
-
-const tokenPlanApiKeyCandidates = [
-  process.env.token_plan_api_key,
-  process.env.qian_wen_api_key,
-  process.env.IMAGE_GEN_API_KEY
-].map(normalizeTokenPlanApiKey).filter(Boolean)
-
-export const tokenPlanConfig = {
-  apiKey: tokenPlanApiKeyCandidates[0] ?? '',
-  baseUrl: process.env.TOKEN_PLAN_BASE_URL || 'https://token-plan.cn-beijing.maas.aliyuncs.com',
-  textModel: process.env.TEXT_GEN_MODEL || 'qwen3.8-max',
-  ttsModel: process.env.TTS_MODEL || 'qwen-audio-3.0-tts-plus'
-}
+const qianWenApiKey = process.env.QIAN_WEN_API_KEY?.trim() || process.env.qian_wen_api_key?.trim() || ''
+const qianWenBaseUrl = process.env.QIAN_WEN_BASE_URL || 'https://dashscope.aliyuncs.com'
 
 export const textGenConfig = {
-  apiKey: tokenPlanConfig.apiKey,
-  baseUrl: process.env.TEXT_GEN_BASE_URL || `${tokenPlanConfig.baseUrl}/compatible-mode/v1`,
-  model: tokenPlanConfig.textModel
+  apiKey: process.env.TEXT_API_KEY || qianWenApiKey,
+  baseUrl: process.env.TEXT_GEN_BASE_URL || `${qianWenBaseUrl}/compatible-mode/v1`,
+  model: process.env.TEXT_GEN_MODEL || 'qwen3.8-max'
+}
+
+export const modelBudgetConfig = {
+  inputCostPerThousand: Number(process.env.TEXT_INPUT_COST_PER_1K || 0),
+  outputCostPerThousand: Number(process.env.TEXT_OUTPUT_COST_PER_1K || 0)
 }
 
 /** 图片生成配置（兼容 OpenAI API 与百炼原生 API） */
 export const imageGenConfig = {
-  apiKey: tokenPlanConfig.apiKey || process.env.IMAGE_GEN_API_KEY || '',
-  baseUrl: process.env.IMAGE_GEN_BASE_URL || tokenPlanConfig.baseUrl,
+  apiKey: process.env.IMAGE_API_KEY || process.env.IMAGE_GEN_API_KEY || qianWenApiKey,
+  baseUrl: process.env.IMAGE_GEN_BASE_URL || qianWenBaseUrl,
   model: process.env.IMAGE_GEN_MODEL || 'wan2.7-image-pro',
   size: process.env.IMAGE_GEN_SIZE || '1024x1792',
 }
 
 /** HappyHorse 视频生成配置 */
 export const happyHorseConfig = HappyHorseConfigSchema.parse({
-  apiKey: tokenPlanConfig.apiKey,
-  baseUrl: process.env.HAPPYHORSE_BASE_URL || tokenPlanConfig.baseUrl,
+  apiKey: process.env.VIDEO_API_KEY || qianWenApiKey,
+  baseUrl: process.env.HAPPYHORSE_BASE_URL || qianWenBaseUrl,
   model: process.env.HAPPYHORSE_MODEL || 'happyhorse-1.1-i2v',
   concurrency: process.env.HAPPYHORSE_CONCURRENCY || '3',
   pollIntervalMs: process.env.HAPPYHORSE_POLL_INTERVAL_MS || '15000',
@@ -98,6 +87,13 @@ export const videoOutputConfig = {
   height: 1920,
   fps: 24,
   crf: 18,
+}
+
+/** PostgreSQL 与本地数据目录 */
+export const persistenceConfig = {
+  databaseUrl: process.env.DATABASE_URL || 'postgresql://short_video:short_video@127.0.0.1:5432/short_video_agent',
+  synchronize: process.env.DB_SYNCHRONIZE !== 'false',
+  dataDir: process.env.DATA_DIR || join(process.cwd(), 'data')
 }
 
 /** 字体候选路径（跨平台） */

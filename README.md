@@ -1,98 +1,174 @@
 # 短视频智能体
 
-本地 Web 工具：小说文本 → AI 动画分镜 → 万相关键帧 → HappyHorse 动态片段 → FFmpeg 成片。
+本地短剧制作工作台：故事输入 -> LangGraph Agent 工作流 -> 角色参考图 -> 分镜 -> 真实 AI 视频片段 -> 静音字幕成片。
 
-## 启动
+## 技术栈
 
-安装依赖：
+- React + Vite
+- NestJS
+- LangGraph.js
+- PostgreSQL + TypeORM + `PostgresSaver`
+- Wan 2.7、HappyHorse 1.1、Kling
+- FFmpeg
 
-```bash
+## 架构
+
+```text
+浏览器（127.0.0.1:5173）
+  |
+  | REST + SSE
+  v
+NestJS API（127.0.0.1:5174）
+  |
+  +-- LangGraph 工作流
+  +-- 文本 / 图片 / 视频 Provider
+  +-- FFmpeg 剪辑
+  +-- PostgreSQL（业务数据 + checkpoint）
+  +-- data/outputs（图片、视频和成片）
+```
+
+本地开发采用混合架构：Podman 只运行 PostgreSQL，NestJS 和 Vite 直接运行在 Windows 宿主机。
+
+## 本地启动
+
+### 前置条件
+
+- Node.js、pnpm
+- Podman Desktop（已完成 WSL2 Podman Machine 初始化并启动）
+- FFmpeg（已加入 PATH，或通过 `FFMPEG_PATH` 指定可执行文件）
+
+### 1. 安装依赖
+
+```powershell
 pnpm install
 ```
 
-启动后端：
+### 2. 配置环境变量
 
-```bash
+```powershell
+Copy-Item .env.example .env
+```
+
+默认数据库配置可直接配合 `compose.yaml` 使用。至少填写 `QIAN_WEN_API_KEY`；选择 Kling 时还需填写 `KLING_API_KEY`。详细变量见下方“配置”章节。
+
+### 3. 启动 PostgreSQL
+
+```powershell
+pnpm db:up
+```
+
+该命令仅启动 PostgreSQL，并使用具名卷 `postgres-data` 持久化数据。脚本会自动探测 PATH 或 `%LOCALAPPDATA%/Programs/Podman/podman.exe` 中的 Podman CLI。
+
+### 4. 启动 NestJS API
+
+```powershell
 pnpm dev
 ```
 
-后端地址：`http://127.0.0.1:5174`
+API 地址：`http://127.0.0.1:5174/api`
 
-启动前端：
+首次启动会自动创建业务表和 LangGraph checkpoint 表，并幂等导入旧的 `data/projects/*.json`。
 
-```bash
+### 5. 启动 Vite 前端
+
+```powershell
 pnpm web
 ```
 
-前端地址：`http://127.0.0.1:5173`
+访问：`http://127.0.0.1:5173`
 
-## Token Plan
+NestJS 和 Vite 需要在两个终端中持续运行。结束开发后，先按 `Ctrl+C` 停止二者，再关闭数据库：
 
-在 `.env` 中配置 Token Plan 个人版密钥：
-
-```dotenv
-TOKEN_PLAN_API_KEY=sk-sp-xxx
-TOKEN_PLAN_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com
+```powershell
+pnpm db:down
 ```
 
-为兼容已有配置，也支持使用 `qian_wen_api_key` 保存同一密钥。页面可选择套餐内的文本、万相图片和 HappyHorse 视频模型。
+`db:down` 不会删除 `postgres-data` 中的数据。
 
-## 能力
+## 配置
 
-- 输入小说文本
-- 生成摘要、角色、场景、分镜、提示词、字幕
-- 编辑生成结果
-- 保存项目到本地 JSON 文件
-- 重新打开项目
-- 导出 JSON / Markdown
-- 使用 Token Plan 文本模型生成结构化分镜
-- 使用 Wan 2.7 生成连续关键帧
-- 使用 HappyHorse 1.1 生成 T2V / I2V / R2V 视频片段
-- 使用 FFmpeg 叠加字幕并合成整片
+| 变量 | 用途 | 说明 |
+| --- | --- | --- |
+| `DATABASE_URL` | PostgreSQL 连接 | 默认值与 `compose.yaml` 一致 |
+| `QIAN_WEN_API_KEY` | 千问文本、Wan 图片、HappyHorse 视频 | 使用阿里云百炼模型时必填 |
+| `QIAN_WEN_BASE_URL` | 阿里云百炼连接地址 | 默认 `https://dashscope.aliyuncs.com` |
+| `KLING_API_KEY` | Kling 视频 | 选择 Kling 时必填 |
+| `MODEL_CATALOG_PATH` | 模型目录文件 | 默认 `./config/model-catalog.json` |
+| `FFMPEG_PATH` | FFmpeg 可执行文件 | FFmpeg 不在 PATH 时填写 |
+| `DATA_DIR` | 本地数据目录 | 默认 `./data` |
+| `PORT` | NestJS 端口 | 默认 `5174` |
 
-页面生成流程分为“生成分镜”“生成分镜图片”“生成视频”三个独立操作。I2V、R2V 和本地 FFmpeg 缺少分镜图片时不会自动生图。
+服务端启动时自动读取项目根目录的 `.env`，系统环境变量优先级更高。密钥只保存在 `.env` 中，不写入模型目录。
 
-## FFmpeg
+文本、图片和视频模型分别配置在 `config/model-catalog.json` 的 `text`、`image`、`video` 列表中，三类模型互不复用配置。更换同协议模型只需新增或修改对应列表项；接入新协议时新增该类型的 Adapter，LangGraph 工作流无需修改。修改目录后需要重启 NestJS。
 
-如果 FFmpeg 未加入系统 PATH，可以指定便携版路径：
+- `text`、`image`、`video`：分别维护模型 ID、显示名称、Adapter 和厂商模型名称。
+- `apiKeyEnv`、`baseUrlEnv`、`baseUrl`：由每个模型独立声明连接配置。
+- `basePath`：模型协议相对连接地址的路径，例如 OpenAI-compatible 的 `/compatible-mode/v1`。
+- `capabilities`：声明视频模型支持的输入模式、时长和分辨率，前后端共用该约束。
 
-```bash
-$env:FFMPEG_PATH="E:\\workspace\\tools\\ffmpeg-8.1.2-full_build\\bin\\ffmpeg.exe"
-pnpm dev
-```
+产品运行时不提供 Mock Provider。缺少 API Key、FFmpeg 或真实媒体输入时，流程会明确失败并保留已有产物。
 
-如果本机没有安装 FFmpeg，`LocalFfmpegProvider` 会把镜头标记为失败并提示：
+## 工作流
 
 ```text
-FFmpeg 不可用，请安装 FFmpeg 或切换 MockProvider。
+Story Analyzer
+  -> Director
+  -> Character Agent
+  -> 角色参考图确认
+  -> Plot Agent
+  -> Scene Agent
+  -> Storyboard Agent
+  -> 分镜确认
+  -> Video Production
+  -> Editing
+  -> Reviewer
+  -> Director 返工或结束
 ```
 
-没有 FFmpeg 时可以使用 MockProvider 验证主流程。
+- 短故事单次分析，长篇内容分段分析后归并。
+- Agent 按角色、剧情、场景、分镜的依赖顺序执行。
+- 角色参考图和分镜通过 LangGraph `interrupt()` 等待人工确认。
+- PostgreSQL checkpoint 支持服务重启后恢复。
+- Reviewer 可定向返工节点或单个镜头。
+- 同一节点自动返工最多 2 次，之后转人工处理。
+- 多集项目为每集创建独立 Run 和 checkpoint。
+- 达到 Token 或费用预算时暂停，确认追加后继续。
 
-## 验收步骤
+## 产物与版本
 
-1. 打开前端页面。
-2. 输入项目名称。
-3. 粘贴至少 10 个字符的小说文本。
-4. 点击“新建项目”。
-5. 点击“生成分镜”。
-6. 修改任意镜头的画面、字幕或提示词。
-7. 点击“保存修改”。
-8. 点击“导出 JSON”。
-9. 点击“导出 Markdown”。
-10. 点击“Mock 生成视频”。
-11. 确认页面提示生成完成。
-12. 点击“FFmpeg 生成视频”；如果未安装 FFmpeg，确认页面显示清晰错误。
+- 项目、Run、审核、预算和版本元数据保存在 PostgreSQL。
+- 图片和视频保存在 `data/outputs/`。
+- 历史产物只追加，不覆盖、不自动删除。
+- 上游修改使下游版本变为 `stale`，但文件仍可回滚。
+- 旧 `data/projects/*.json` 会在首次启动时幂等导入，原文件保持不变。
 
-## 后续接入第三方平台
+## 手机竖屏
 
-新增平台时实现统一接口：
+- 画面和成片统一使用 `9:16`。
+- FFmpeg 等比缩放后裁切到 `1080x1920`，不会拉伸画面。
+- 提示词要求主体位于中央安全区域，并为底部字幕保留空间。
+- 成片统一移除输入片段音轨，只包含画面和字幕。
 
-```ts
-interface VideoProvider {
-  name: VideoProviderName
-  generate(input: VideoGenerateInput): Promise<VideoGenerateResult>
-}
+## 验收
+
+1. 创建项目并输入至少 10 个字符的故事内容。
+2. 选择文本、生图、视频模型和目标时长。
+3. 启动制作流程。
+4. 检查并确认角色参考图。
+5. 编辑并确认分镜。
+6. 等待真实关键帧和视频片段生成。
+7. 确认成片审核结果或提交定向返工。
+8. 下载最终 MP4，确认画面为 `9:16`、字幕可见且没有音轨。
+9. 重启 NestJS，确认等待中的 Run 可以从 checkpoint 继续。
+
+## 验证命令
+
+```powershell
+pnpm test
+pnpm build
 ```
 
-主流程只调用 provider，不直接依赖具体平台。
+自动化测试使用测试桩隔离外部网络，不消耗真实模型 Token 或媒体额度。
+
+详细设计见 `docs/superpowers/specs/2026-08-03-langgraph-nestjs-workflow-design.md`。

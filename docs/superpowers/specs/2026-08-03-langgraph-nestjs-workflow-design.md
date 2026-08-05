@@ -3,7 +3,7 @@
 ## 状态
 
 - 日期：2026-08-03
-- 状态：设计已确认，待实现
+- 状态：已实现，PostgreSQL + Podman 冒烟通过
 - 取代范围：现有 Express 同步生成接口、本地 JSON 主存储、产品级 Mock Provider 和手工分步生成流程
 - 保留范围：React + Vite 前端、现有真实文本/生图/视频 Provider、FFmpeg 字幕与拼接能力、JSON/Markdown 导出能力
 
@@ -450,7 +450,7 @@ run.cancelled
 
 ## ModelGateway 与预算
 
-所有文本 Agent 通过统一 `ModelGateway` 调用现有 Token Plan 文本模型。每个节点可独立配置：
+所有文本 Agent 通过统一 `ModelGateway` 和模型目录调用 OpenAI-compatible 文本模型。每个节点可独立配置：
 
 ```text
 model
@@ -476,7 +476,7 @@ Token 控制策略：
 
 ### 文本
 
-- 复用现有 Token Plan OpenAI-compatible 接口。
+- 文本、图片和视频模型通过模型目录选择 Adapter、连接与模型 ID。
 - 未配置 API Key 时禁止启动 Run，并返回明确配置错误。
 
 ### 图片

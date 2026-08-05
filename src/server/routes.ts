@@ -9,7 +9,8 @@ import { exportProjectJson, exportProjectMarkdown } from './services/exporters'
 import { createVideoProvider } from './services/videoProviders'
 import { createVideoGenProvider } from './services/videoGenProviders'
 import { createImageProvider } from './services/imageProviders'
-import { imageGenConfig, resolveFfmpegPath } from './config'
+import { resolveFfmpegPath } from './config'
+import { getDefaultModelSelection, listModelCatalog, resolveImageModel, resolveTextModel } from './services/modelCatalog'
 import { canReuseVideoClip, createVideoClipMetadata } from './services/videoClipMetadata'
 import {
   getVideoProviderDescriptor,
@@ -45,6 +46,10 @@ export function createRoutes(dataDir: string) {
 
   router.get('/video-providers', (_req, res) => {
     res.json(listVideoProviderDescriptors())
+  })
+
+  router.get('/models', (_req, res) => {
+    res.json(listModelCatalog())
   })
 
   router.get('/projects', async (_req, res, next) => {
@@ -100,7 +105,11 @@ export function createRoutes(dataDir: string) {
       const input = { sourceText: project.sourceText, style: project.style }
       const requestedModel = req.body?.model
       const storyPackage = requestedModel
-        ? await generateStoryPackageWithModel(input, TextGenerationModelSchema.parse(requestedModel))
+        ? await (async () => {
+            const modelId = TextGenerationModelSchema.parse(requestedModel)
+            const model = resolveTextModel(modelId)
+            return generateStoryPackageWithModel(input, modelId, { apiKey: model.apiKey, baseUrl: model.baseUrl })
+          })()
         : generateStoryPackage(input)
       const updated = await store.saveProject({ ...project, storyPackage, updatedAt: new Date().toISOString() })
       res.json(updated)
@@ -116,8 +125,17 @@ export function createRoutes(dataDir: string) {
       const shots = project.storyPackage?.shots ?? []
       if (shots.length === 0) return res.status(400).json({ message: '请先生成分镜' })
 
-      const imageModel = ImageGenerationModelSchema.parse(req.body?.model ?? imageGenConfig.model)
-      const imageProvider = createImageProvider({ ...imageGenConfig, model: imageModel })
+      const imageModelId = ImageGenerationModelSchema.parse(
+        req.body?.model ?? getDefaultModelSelection().imageModel
+      )
+      const imageModel = resolveImageModel(imageModelId)
+      const imageProvider = createImageProvider({
+        adapter: imageModel.adapter,
+        apiKey: imageModel.apiKey,
+        baseUrl: imageModel.baseUrl,
+        model: imageModel.model,
+        size: imageModel.size
+      })
       if (!imageProvider) {
         return res.status(400).json({ message: '未配置图片生成 API Key' })
       }

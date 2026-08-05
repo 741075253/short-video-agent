@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HappyHorseProvider, KlingProvider, MockVideoGenProvider } from '../services/videoGenProviders'
-import type { HappyHorseConfig, HappyHorseModel, KlingConfig, Shot, VideoGenerationOptions } from '../../shared/schema'
+import type { HappyHorseConfig, KlingConfig, Shot, VideoGenerationOptions } from '../../shared/schema'
 
 let dir: string | undefined
 
@@ -144,14 +144,14 @@ describe('videoGenProviders', () => {
     ['happyhorse-1.1-i2v', 'first_frame', false],
     ['happyhorse-1.1-t2v', undefined, true],
     ['happyhorse-1.1-r2v', 'reference_image', true]
-  ] as const)('submits %s tasks using the Token Plan media API', async (model, mediaType, hasRatio) => {
+  ] as const)('submits %s tasks using the DashScope media API', async (model, mediaType, hasRatio) => {
     dir = await mkdtemp(join(tmpdir(), 'short-video-agent-happyhorse-'))
     const imagePath = join(dir, 'shot-1.png')
     await writeFile(imagePath, 'image-data')
     const happyHorseConfig: HappyHorseConfig = {
-      apiKey: 'token-plan-key',
-      baseUrl: 'https://token-plan.test',
-      model: model as HappyHorseModel,
+      apiKey: 'api-key',
+      baseUrl: 'https://dashscope.test',
+      model,
       concurrency: 3,
       pollIntervalMs: 0,
       pollMaxRetries: 2

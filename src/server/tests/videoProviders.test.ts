@@ -86,7 +86,7 @@ describe('videoProviders', () => {
     expect(result.errors[0].message).toContain('缺少可用图片素材')
   })
 
-  it('renders existing video clips without the static image loop or scale filter', async () => {
+  it('renders existing video clips as silent 9:16 output without the static image loop', async () => {
     dir = await mkdtemp(join(tmpdir(), 'short-video-agent-video-'))
     const clipPath = join(dir, 'shot-1-clip.mp4')
     await writeFile(clipPath, 'video')
@@ -112,7 +112,10 @@ describe('videoProviders', () => {
     const firstArgs = spawnFfmpeg.mock.calls[0][0]
     const concatArgs = spawnFfmpeg.mock.calls[1][0]
     expect(firstArgs).not.toContain('-loop')
-    expect(firstArgs.join(' ')).not.toContain('scale=')
+    expect(firstArgs.join(' ')).toContain('scale=1080:1920:force_original_aspect_ratio=increase')
+    expect(firstArgs.join(' ')).toContain('crop=1080:1920')
+    expect(firstArgs).toContain('-an')
     expect(concatArgs).toEqual(expect.arrayContaining(['-f', 'concat', '-c:v', 'libx264']))
+    expect(concatArgs).toContain('-an')
   })
 })

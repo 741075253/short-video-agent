@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "db:up": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/podman-compose.ps1 up",
+    "db:down": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/podman-compose.ps1 down",
     "dev": "tsx src/server/index.ts",
     "web": "vite --host 127.0.0.1",
     "test": "vitest run",
@@ -11,13 +13,24 @@
     "build": "tsc -p tsconfig.json && vite build"
   },
   "dependencies": {
+    "@langchain/core": "^1.2.4",
+    "@langchain/langgraph": "^1.4.9",
+    "@langchain/langgraph-checkpoint-postgres": "^1.0.4",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/platform-express": "^11.1.28",
     "@vitejs/plugin-react": "latest",
     "cors": "latest",
     "express": "latest",
-    "tsx": "latest",
-    "vite": "latest",
+    "lucide-react": "^1.28.0",
+    "pg": "^8.22.0",
     "react": "latest",
     "react-dom": "latest",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "tsx": "latest",
+    "typeorm": "^1.1.0",
+    "vite": "latest",
     "zod": "latest"
   },
   "devDependencies": {
@@ -26,9 +39,9 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest",
-    "vitest": "latest",
+    "@types/supertest": "latest",
     "supertest": "latest",
-    "@types/supertest": "latest"
+    "typescript": "latest",
+    "vitest": "latest"
   }
 }

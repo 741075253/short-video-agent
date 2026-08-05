@@ -102,9 +102,9 @@ export class LocalFfmpegProvider implements VideoProvider {
         updatedShots: shots.map((shot) => ({
           ...shot,
           status: 'failed' as const,
-          errorMessage: 'FFmpeg 不可用，请安装 FFmpeg 或切换 MockProvider。'
+          errorMessage: 'FFmpeg 不可用，请安装 FFmpeg 并配置 FFMPEG_PATH。'
         })),
-        errors: shots.map((shot) => ({ shotId: shot.id, message: 'FFmpeg 不可用，请安装 FFmpeg 或切换 MockProvider。' }))
+        errors: shots.map((shot) => ({ shotId: shot.id, message: 'FFmpeg 不可用，请安装 FFmpeg 并配置 FFMPEG_PATH。' }))
       }
     }
 
@@ -158,7 +158,10 @@ export class LocalFfmpegProvider implements VideoProvider {
       const clipPath = join(this.outputDir, `${shot.id}-clip.mp4`)
       const duration = shot.durationSeconds
 
-      const vfParts: string[] = [`scale=${videoOutputConfig.width}:${videoOutputConfig.height}`]
+      const vfParts: string[] = [
+        `scale=${videoOutputConfig.width}:${videoOutputConfig.height}:force_original_aspect_ratio=increase`,
+        `crop=${videoOutputConfig.width}:${videoOutputConfig.height}`
+      ]
       if (safeFont) {
         const sceneText = this.escapeDrawtext(shot.visual.slice(0, 40) || '……')
         const subtitleText = this.escapeDrawtext(shot.subtitle || '')
@@ -177,7 +180,7 @@ export class LocalFfmpegProvider implements VideoProvider {
       if (vfParts.length > 0) {
         clipArgs.push('-vf', vfParts.join(','))
       }
-      clipArgs.push('-y', clipPath)
+      clipArgs.push('-an', '-y', clipPath)
 
       await this.spawnFfmpeg(clipArgs)
       clipPaths.push(clipPath)
@@ -210,13 +213,14 @@ export class LocalFfmpegProvider implements VideoProvider {
       const captionedPath = join(this.outputDir, `${shot.id}-captioned.mp4`)
       const args = ['-i', clipPath, '-c:v', 'libx264', '-preset', 'fast', '-crf', String(videoOutputConfig.crf), '-pix_fmt', 'yuv420p', '-r', String(videoOutputConfig.fps)]
       const subtitleText = this.escapeDrawtext(shot.subtitle || '')
+      const videoFilters = [
+        `scale=${videoOutputConfig.width}:${videoOutputConfig.height}:force_original_aspect_ratio=increase`,
+        `crop=${videoOutputConfig.width}:${videoOutputConfig.height}`
+      ]
       if (safeFont && subtitleText.trim()) {
-        args.push(
-          '-vf',
-          `drawtext=fontfile='${safeFont}':text='${subtitleText}':fontcolor=white:fontsize=28:x=(w-text_w)/2:y=h*0.78:box=1:boxcolor=black@0.5:boxborderw=8`
-        )
+        videoFilters.push(`drawtext=fontfile='${safeFont}':text='${subtitleText}':fontcolor=white:fontsize=28:x=(w-text_w)/2:y=h*0.78:box=1:boxcolor=black@0.5:boxborderw=8`)
       }
-      args.push('-c:a', 'aac', '-y', captionedPath)
+      args.push('-vf', videoFilters.join(','), '-an', '-y', captionedPath)
       await this.spawnFfmpeg(args)
       captionedPaths.push(captionedPath)
     }
@@ -227,7 +231,7 @@ export class LocalFfmpegProvider implements VideoProvider {
     await this.spawnFfmpeg([
       '-f', 'concat', '-safe', '0', '-i', concatList,
       '-c:v', 'libx264', '-preset', 'fast', '-crf', String(videoOutputConfig.crf),
-      '-pix_fmt', 'yuv420p', '-r', String(videoOutputConfig.fps), '-c:a', 'aac', '-y', outputPath
+      '-pix_fmt', 'yuv420p', '-r', String(videoOutputConfig.fps), '-an', '-y', outputPath
     ])
   }
 

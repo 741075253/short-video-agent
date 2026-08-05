@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { happyHorseConfig, klingConfig } from '../config'
+import { resolveVideoModel } from './modelCatalog'
 import type {
   ClipFailure,
   ClipGenerationResult,
   ClipResult,
   HappyHorseConfig,
-  HappyHorseModel,
   KlingConfig,
   Shot,
   VideoGenerationOptions,
@@ -249,19 +249,27 @@ interface HappyHorseResponse<T> {
   message?: string
 }
 
-const happyHorseProviderNames: Record<HappyHorseModel, VideoGenerationProviderName> = {
-  'happyhorse-1.1-i2v': 'happyhorse_i2v',
-  'happyhorse-1.1-t2v': 'happyhorse_t2v',
-  'happyhorse-1.1-r2v': 'happyhorse_r2v'
+type VideoInputMode = 't2v' | 'i2v' | 'r2v'
+
+function inferVideoInputMode(model: string): VideoInputMode {
+  if (model.endsWith('-t2v')) return 't2v'
+  if (model.endsWith('-r2v')) return 'r2v'
+  return 'i2v'
 }
 
 export class HappyHorseProvider implements VideoGenProvider {
   readonly name: VideoGenerationProviderName
-  readonly model: HappyHorseModel
+  readonly model: string
+  private readonly inputMode: VideoInputMode
 
-  constructor(private readonly config: HappyHorseConfig = happyHorseConfig) {
+  constructor(
+    private readonly config: HappyHorseConfig = happyHorseConfig,
+    name?: VideoGenerationProviderName,
+    inputMode?: VideoInputMode
+  ) {
     this.model = config.model
-    this.name = happyHorseProviderNames[config.model]
+    this.name = name ?? config.model.replace('happyhorse-1.1-', 'happyhorse_')
+    this.inputMode = inputMode ?? inferVideoInputMode(config.model)
   }
 
   async generateClips(
@@ -272,10 +280,10 @@ export class HappyHorseProvider implements VideoGenProvider {
   ): Promise<ClipGenerationResult> {
     if (shots.length === 0) return { success: true, clips: [] }
     if (!this.config.apiKey) {
-      return this.failureForAll(shots, '未配置 Token Plan API Key，请设置 TOKEN_PLAN_API_KEY')
+      return this.failureForAll(shots, '未配置视频模型 API Key')
     }
-    if (this.model !== 'happyhorse-1.1-t2v' && shots.length !== imageUrls.length) {
-      return this.failureForAll(shots, `HappyHorse 输入图片数量 ${imageUrls.length} 与镜头数量 ${shots.length} 不一致`)
+    if (this.inputMode !== 't2v' && shots.length !== imageUrls.length) {
+      return this.failureForAll(shots, `视频模型输入图片数量 ${imageUrls.length} 与镜头数量 ${shots.length} 不一致`)
     }
 
     await mkdir(outputDir, { recursive: true })
@@ -330,12 +338,12 @@ export class HappyHorseProvider implements VideoGenProvider {
     try {
       body = text ? JSON.parse(text) as HappyHorseResponse<T> : {}
     } catch {
-      throw new Error(`HappyHorse 返回 ${response.status}: ${text.slice(0, 300)}`)
+      throw new Error(`视频模型返回 ${response.status}: ${text.slice(0, 300)}`)
     }
     if (!response.ok || body.code) {
-      throw new Error(`HappyHorse 返回 ${response.status}: ${body.message || text.slice(0, 300)}`)
+      throw new Error(`视频模型返回 ${response.status}: ${body.message || text.slice(0, 300)}`)
     }
-    if (!body.output) throw new Error('HappyHorse 未返回 output')
+    if (!body.output) throw new Error('视频模型未返回 output')
     return body.output
   }
 
@@ -349,12 +357,12 @@ export class HappyHorseProvider implements VideoGenProvider {
       prompt: string
       media?: Array<{ type: 'first_frame' | 'reference_image'; url: string }>
     } = { prompt }
-    if (this.model !== 'happyhorse-1.1-t2v' && !imageUrl) {
-      throw new Error('HappyHorse 图生视频缺少输入图片')
+    if (this.inputMode !== 't2v' && !imageUrl) {
+      throw new Error('视频模型图生视频缺少输入图片')
     }
-    if (this.model === 'happyhorse-1.1-i2v') {
+    if (this.inputMode === 'i2v') {
       input.media = [{ type: 'first_frame', url: await happyHorseImageInput(imageUrl!) }]
-    } else if (this.model === 'happyhorse-1.1-r2v') {
+    } else if (this.inputMode === 'r2v') {
       input.prompt = `[Image 1] 是当前镜头的角色与场景参考。${prompt}`
       input.media = [{ type: 'reference_image', url: await happyHorseImageInput(imageUrl!) }]
     }
@@ -364,7 +372,7 @@ export class HappyHorseProvider implements VideoGenProvider {
       duration: options.durationSeconds,
       watermark: false
     }
-    if (this.model !== 'happyhorse-1.1-i2v') parameters.ratio = '9:16'
+    if (this.inputMode !== 'i2v') parameters.ratio = '9:16'
 
     const output = await this.request<{ task_id?: string }>(
       '/services/aigc/video-generation/video-synthesis',
@@ -374,7 +382,7 @@ export class HappyHorseProvider implements VideoGenProvider {
         body: JSON.stringify({ model: this.model, input, parameters })
       }
     )
-    if (!output.task_id) throw new Error('HappyHorse 未返回 task_id')
+    if (!output.task_id) throw new Error('视频模型未返回 task_id')
     return output.task_id
   }
 
@@ -470,17 +478,25 @@ export class MockVideoGenProvider implements VideoGenProvider {
 }
 
 export function createVideoGenProvider(
-  name: VideoGenerationProviderName,
-  config: KlingConfig = klingConfig
+  name: VideoGenerationProviderName
 ): VideoGenProvider {
-  const factories: Partial<Record<VideoGenerationProviderName, () => VideoGenProvider>> = {
-    kling: () => new KlingProvider(config),
-    happyhorse_i2v: () => new HappyHorseProvider({ ...happyHorseConfig, model: 'happyhorse-1.1-i2v' }),
-    happyhorse_t2v: () => new HappyHorseProvider({ ...happyHorseConfig, model: 'happyhorse-1.1-t2v' }),
-    happyhorse_r2v: () => new HappyHorseProvider({ ...happyHorseConfig, model: 'happyhorse-1.1-r2v' }),
-    mock: () => new MockVideoGenProvider()
+  if (name === 'mock') return new MockVideoGenProvider()
+  const model = resolveVideoModel(name)
+  if (model.adapter === 'kling-video') {
+    return new KlingProvider({
+      ...klingConfig,
+      apiKey: model.apiKey,
+      baseUrl: model.baseUrl,
+      model: model.model
+    })
   }
-  const factory = factories[name]
-  if (!factory) throw new Error(`视频 Provider ${name} 不支持 AI 图生视频`)
-  return factory()
+  if (model.adapter === 'dashscope-video') {
+    return new HappyHorseProvider({
+      ...happyHorseConfig,
+      apiKey: model.apiKey,
+      baseUrl: model.baseUrl,
+      model: model.model
+    }, model.id, model.inputMode)
+  }
+  throw new Error(`视频模型 ${name} 使用了不支持的 Adapter：${model.adapter}`)
 }

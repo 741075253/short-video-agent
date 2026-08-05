@@ -3,6 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { imageGenConfig } from '../config'
 import type { Shot } from '../../shared/schema'
 
+type ImageProviderConfig = typeof imageGenConfig & {
+  adapter?: 'dashscope-image' | 'openai-image'
+}
+
 export interface ImageProvider {
   readonly name: string
   generateImage(shot: Shot, outputDir: string, refImageUrl?: string): Promise<string>
@@ -17,7 +21,7 @@ class UniversalImageProvider implements ImageProvider {
   /** 最近一次生图的 OSS URL（DashScope 模式），用于下一帧参考 */
   lastImageUrl: string | null = null
 
-  constructor(private readonly config: typeof imageGenConfig) {}
+  constructor(private readonly config: ImageProviderConfig) {}
 
   private promptForShot(shot: Shot): string {
     return `${shot.prompt || shot.visual}, continuous sequence, consistent characters and background, cohesive visual storytelling`
@@ -93,7 +97,8 @@ class UniversalImageProvider implements ImageProvider {
   // ---- DashScope 原生 API ----
 
   private get isDashScope(): boolean {
-    return /(?:dashscope|maas)\.aliyuncs\.com/.test(this.config.baseUrl)
+    return this.config.adapter === 'dashscope-image'
+      || /(?:dashscope|maas)\.aliyuncs\.com/.test(this.config.baseUrl)
   }
 
   private get isWan27(): boolean {
@@ -290,7 +295,7 @@ class UniversalImageProvider implements ImageProvider {
 
 // ========== 工厂 ==========
 
-export function createImageProvider(config: typeof imageGenConfig = imageGenConfig): ImageProvider | null {
+export function createImageProvider(config: ImageProviderConfig = imageGenConfig): ImageProvider | null {
   if (!config.apiKey) return null
   return new UniversalImageProvider(config)
 }
